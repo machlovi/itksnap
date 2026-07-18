@@ -43,6 +43,8 @@
 #include "SmoothLabelsModel.h"
 #include "InterpolateLabelModel.h"
 #include "IntensityCurveModel.h"
+#include "SnakeWizardModel.h"
+#include "SNAPSegmentationROISettings.h"
 #include "ImageCoordinateGeometry.h"
 #include "itkImageRegionConstIterator.h"
 #include "itkImageRegionConstIteratorWithIndex.h"
@@ -352,6 +354,23 @@ QJsonArray AssistantPanel::toolSchemas() const
     addTool("delete_label", "Delete a segmentation label: erase its voxels and remove it from "
             "the label table.", p, QJsonArray{"label"}); }
 
+  // ---- flagship: semi-automatic active-contour (snake) segmentation ----
+  { QJsonObject p;
+    p["lower"]=numObj("Lower intensity of the structure to grow into.");
+    p["upper"]=numObj("Upper intensity of the structure to grow into.");
+    p["seed_x"]=intObj("Seed voxel X (optional; defaults to the current crosshair).");
+    p["seed_y"]=intObj("Seed voxel Y (optional).");
+    p["seed_z"]=intObj("Seed voxel Z (optional).");
+    p["seed_radius_mm"]=numObj("Seed bubble radius in mm (default 3).");
+    p["iterations"]=intObj("Max evolution iterations (default 40).");
+    p["label"]=intObj("Label id to write the result into (default 1).");
+    addTool("active_contour_segment",
+            "Run ITK-SNAP's semi-automatic ACTIVE-CONTOUR (snake) segmentation: it grows a "
+            "region from a seed point through voxels within an intensity range, giving smoother, "
+            "connected results than a raw threshold. Provide the structure's intensity range and "
+            "optionally a seed point (defaults to the crosshair). Best for compact structures.",
+            p, QJsonArray{"lower","upper"}); }
+
   return tools;
 }
 
@@ -457,6 +476,7 @@ void AssistantPanel::dispatchToolCall(const QString &id, const QString &name,
     else if(name == "set_label_visibility") result = toolSetLabelVisibility(args, ok);
     else if(name == "create_label")       result = toolCreateLabel(args, ok);
     else if(name == "delete_label")       result = toolDeleteLabel(args, ok);
+    else if(name == "active_contour_segment") result = toolActiveContourSegment(args, ok);
     else { ok = false; result = QString("Unknown tool '%1'.").arg(name); }
     }
   catch(IRISException &exc)
@@ -1066,6 +1086,78 @@ QString AssistantPanel::toolDeleteLabel(const QJsonObject &args, bool &ok)
   d->InvokeEvent(SegmentationChangeEvent());
   ok = true;
   return QString("Deleted label %1 (erased %2 voxels and removed it).").arg(lab).arg((qulonglong)n);
+}
+
+/* ------------------------------------------------------------------ */
+/* flagship: semi-automatic active-contour (snake) segmentation        */
+/* Pipeline order per the capability audit; guarded + cleaned up on    */
+/* failure. Grows a region from a seed through an intensity range.      */
+/* ------------------------------------------------------------------ */
+QString AssistantPanel::toolActiveContourSegment(const QJsonObject &args, bool &ok)
+{
+  IRISApplication *d = m_Model->GetDriver();
+  if(!d->IsMainImageLoaded()) { ok = false; return "No image is loaded."; }
+  GlobalState *gs = d->GetGlobalState();
+  SnakeWizardModel *swm = m_Model->GetSnakeWizardModel();
+
+  const double lower = args["lower"].toDouble();
+  const double upper = args["upper"].toDouble();
+  const int labelId  = args.contains("label") ? args["label"].toInt() : 1;
+  const int iters    = args.contains("iterations") ? args["iterations"].toInt() : 40;
+  const double seedR = args.contains("seed_radius_mm") ? args["seed_radius_mm"].toDouble() : 3.0;
+
+  Vector3ui cur = d->GetCursorPosition();
+  Vector3i seed;
+  seed[0] = args.contains("seed_x") ? args["seed_x"].toInt() : (int)cur[0];
+  seed[1] = args.contains("seed_y") ? args["seed_y"].toInt() : (int)cur[1];
+  seed[2] = args.contains("seed_z") ? args["seed_z"].toInt() : (int)cur[2];
+
+  gs->SetDrawingColorLabel((LabelType)labelId);            // target label for the result
+
+  // 1. enter SNAP (active-contour) mode over the whole image, region-competition snake
+  SNAPSegmentationROISettings roi;
+  roi.SetROI(d->GetCurrentImageData()->GetMain()->GetImageBase()->GetBufferedRegion());
+  d->InitializeSNAPImageData(roi);
+  d->SetSnakeMode(IN_OUT_SNAKE);
+  swm->OnSnakeModeEnter();
+
+  // 2. threshold preprocessing -> speed image
+  swm->GetThresholdLowerModel()->SetValue(lower);
+  swm->GetThresholdUpperModel()->SetValue(upper);
+  swm->ApplyPreprocessing();
+  swm->CompletePreprocessing();
+  if(!gs->GetSpeedValid())
+    { d->ReleaseSNAPImageData(); ok = false;
+      return "Preprocessing produced no speed image for that range; try a different intensity range."; }
+
+  // 3. seed bubble at the given/cursor voxel
+  GlobalState::BubbleArray bubbles;
+  Bubble b; b.center = seed; b.radius = seedR;
+  bubbles.push_back(b);
+  gs->SetBubbleArray(bubbles);
+
+  // 4. initialize the level-set contour from the seed
+  if(!d->InitializeActiveContourPipeline())
+    { d->ReleaseSNAPImageData(); ok = false;
+      return "Could not initialize the contour; make sure the seed voxel is inside the structure."; }
+
+  // 5. evolve until convergence or the iteration cap
+  swm->OnEvolutionPageEnter();
+  int i = 0;
+  for(; i < iters; ++i)
+    if(swm->PerformEvolutionStep()) break;
+
+  // 6. commit the evolved contour into the main segmentation, leave SNAP mode
+  d->UpdateIRISWithSnapImageData();
+  d->ReleaseSNAPImageData();
+  d->InvokeEvent(SegmentationChangeEvent());
+
+  const size_t n = d->GetNumberOfVoxelsWithLabel((LabelType)labelId);
+  ok = true;
+  return QString("Active-contour segmentation done: grew from seed (%1,%2,%3) through intensity "
+                 "[%4,%5], %6 iterations, into label %7 -> %8 voxels.")
+           .arg(seed[0]).arg(seed[1]).arg(seed[2]).arg(lower).arg(upper).arg(i)
+           .arg(labelId).arg((qulonglong)n);
 }
 
 /* ------------------------------------------------------------------ */

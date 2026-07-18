@@ -103,6 +103,8 @@ private:
   QString toolSetLabelVisibility(const QJsonObject &args, bool &ok);
   QString toolCreateLabel(const QJsonObject &args, bool &ok);
   QString toolDeleteLabel(const QJsonObject &args, bool &ok);
+  // -- wave 2: flagship semi-automatic active-contour (snake) segmentation --
+  QString toolActiveContourSegment(const QJsonObject &args, bool &ok);
 
   // chat rendering
   void appendChat(const QString &who, const QString &text);
