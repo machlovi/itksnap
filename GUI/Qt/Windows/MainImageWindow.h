@@ -35,6 +35,7 @@ class SliceViewPanel;
 class GlobalUIModel;
 class QDockWidget;
 class SnakeWizardPanel;
+class AssistantPanel;
 class EventBucket;
 class QModelIndex;
 class QProgressDialog;
@@ -419,6 +420,10 @@ private:
 
   // Left and right docks
   QDockWidget *m_DockLeft, *m_DockRight;
+
+  // Assistant (LLM chat) dock
+  QDockWidget *m_DockAssistant;
+  AssistantPanel *m_AssistantPanel;
 
   // A stack widget for the right dock
   QStackedWidget *m_RightDockStack;

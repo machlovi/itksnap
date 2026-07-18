@@ -764,6 +764,7 @@ SET(UI_QT_CXX
   GUI/Qt/Windows/LoadTransformationDialog.cxx
   GUI/Qt/Windows/LabelSelectionPopup.cxx
   GUI/Qt/Windows/MainControlPanel.cxx
+  GUI/Qt/Windows/AssistantPanel.cxx
   GUI/Qt/Windows/MainImageWindow.cxx
   GUI/Qt/Windows/PreferencesDialog.cxx
   GUI/Qt/Windows/QtStyles.cxx
@@ -871,6 +872,7 @@ SET(UI_MOC_HEADERS
   GUI/Qt/Windows/LabelSelectionPopup.h
   GUI/Qt/Windows/LoadTransformationDialog.h
   GUI/Qt/Windows/MainControlPanel.h
+  GUI/Qt/Windows/AssistantPanel.h
   GUI/Qt/Windows/MainImageWindow.h
   GUI/Qt/Windows/PreferencesDialog.h
   GUI/Qt/Windows/ReorientImageDialog.h
@@ -1423,6 +1425,11 @@ TARGET_LINK_LIBRARIES(logic_api_test ${SNAP_EXTERNAL_LIBS} itksnaplogic)
 TARGET_INCLUDE_DIRECTORIES(logic_api_test PUBLIC ${SNAP_INCLUDE_DIRS})
 
 add_test(NAME IRISApplicationTest COMMAND logic_api_test)
+
+# Headless ground-truth harness for the LLM assistant (agent eval)
+ADD_EXECUTABLE(assistant_eval Testing/Logic/assistant_eval.cxx)
+TARGET_LINK_LIBRARIES(assistant_eval ${SNAP_EXTERNAL_LIBS} itksnaplogic)
+TARGET_INCLUDE_DIRECTORIES(assistant_eval PUBLIC ${SNAP_INCLUDE_DIRS})
 
 ADD_EXECUTABLE(remote_image_load_test
     Testing/Logic/RemoteImageLoadTest.cxx)

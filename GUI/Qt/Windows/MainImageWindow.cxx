@@ -41,6 +41,7 @@
 #include "ColorMapModel.h"
 #include "ViewPanel3D.h"
 #include "SnakeWizardPanel.h"
+#include "AssistantPanel.h"
 #include "LatentITKEventNotifier.h"
 #include <QProgressDialog>
 #include "QtReporterDelegates.h"
@@ -270,6 +271,18 @@ MainImageWindow::MainImageWindow(QWidget *parent) :
   m_RightDockStack->addWidget(m_RegistrationDialog);
 
   this->addDockWidget(Qt::RightDockWidgetArea, m_DockRight);
+
+  // Assistant (LLM chat) dock -- independent of the wizard dock stack
+  m_DockAssistant = new QDockWidget(tr("Assistant"), this);
+  m_DockAssistant->setAllowedAreas(Qt::RightDockWidgetArea | Qt::LeftDockWidgetArea);
+  m_DockAssistant->setFeatures(
+        QDockWidget::DockWidgetFloatable |
+        QDockWidget::DockWidgetMovable |
+        QDockWidget::DockWidgetClosable);
+  m_AssistantPanel = new AssistantPanel(m_DockAssistant);
+  m_DockAssistant->setWidget(m_AssistantPanel);
+  this->addDockWidget(Qt::RightDockWidgetArea, m_DockAssistant);
+  m_DockAssistant->setVisible(true);
 
   // Set up the recent items panels
   connect(ui->panelRecentImages, SIGNAL(RecentItemSelected(QString)),
@@ -516,6 +529,7 @@ void MainImageWindow::Initialize(GlobalUIModel *model)
 
   // Initialize the docked panels
   m_ControlPanel->SetModel(model);
+  m_AssistantPanel->SetModel(model);
 
   // Attach the progress reporter delegate to the model
   m_Model->SetProgressReporterDelegate(m_ProgressReporterDelegate);
