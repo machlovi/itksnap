@@ -47,6 +47,8 @@
 #include "itkImageRegionConstIteratorWithIndex.h"
 #include <unordered_set>
 #include <vector>
+#include <utility>     // std::swap
+#include <algorithm>   // std::min/std::max
 
 AssistantPanel::AssistantPanel(QWidget *parent)
   : QWidget(parent)
@@ -485,10 +487,16 @@ QString AssistantPanel::toolThresholdSegment(const QJsonObject &args, bool &ok)
   if(!driver->IsMainImageLoaded())
     { ok = false; return "No image is loaded. Load one first."; }
 
+  // -- parameter validation --
+  if(!args.contains("lower"))
+    { ok = false; return "threshold_segment needs a 'lower' intensity value."; }
   int labelId = args.contains("label") ? args["label"].toInt() : 1;
-  if(labelId < 1) labelId = 1;
-  const double lower = args["lower"].toDouble();
-  const double upper = args.contains("upper") ? args["upper"].toDouble() : 1e30;
+  if(labelId < 1)   labelId = 1;
+  if(labelId > 255) labelId = 255;                     // labels are 8/16-bit ids
+  double lower = args["lower"].toDouble();
+  double upper = args.contains("upper") ? args["upper"].toDouble() : 1e30;
+  QString note;
+  if(lower > upper) { std::swap(lower, upper); note = " (swapped reversed bounds)"; }
   const QString name = args.contains("name") ? args["name"].toString() : QString("segmentation");
 
   GlobalState *gs = driver->GetGlobalState();
@@ -533,9 +541,9 @@ QString AssistantPanel::toolThresholdSegment(const QJsonObject &args, bool &ok)
     return QString("No voxels matched intensity [%1, %2] — try a different range "
                    "(call get_scene_overview to see the range).")
              .arg(lower).arg(upper);
-  return QString("Segmented '%1' as label %2: %3 voxels in intensity [%4, %5]. "
+  return QString("Segmented '%1' as label %2: %3 voxels in intensity [%4, %5]%6. "
                  "The mask is now visible in the ITK-SNAP viewer.")
-           .arg(name).arg(labelId).arg(count).arg(lower).arg(upper);
+           .arg(name).arg(labelId).arg(count).arg(lower).arg(upper).arg(note);
 }
 
 QString AssistantPanel::toolMeasureVolume(const QJsonObject &args, bool &ok)
@@ -763,10 +771,13 @@ QString AssistantPanel::toolMoveCursor(const QJsonObject &args, bool &ok)
 {
   IRISApplication *d = m_Model->GetDriver();
   if(!d->IsMainImageLoaded()) { ok = false; return "No image is loaded."; }
+  // clamp to image bounds so an out-of-range coordinate can't throw
+  Vector3ui sz = d->GetCurrentImageData()->GetMain()->GetSize();
+  int xi = args["x"].toInt(), yi = args["y"].toInt(), zi = args["z"].toInt();
   Vector3ui c;
-  c[0] = static_cast<unsigned int>(args["x"].toInt());
-  c[1] = static_cast<unsigned int>(args["y"].toInt());
-  c[2] = static_cast<unsigned int>(args["z"].toInt());
+  c[0] = (unsigned) std::max(0, std::min(xi, (int)sz[0] - 1));
+  c[1] = (unsigned) std::max(0, std::min(yi, (int)sz[1] - 1));
+  c[2] = (unsigned) std::max(0, std::min(zi, (int)sz[2] - 1));
   d->SetCursorPosition(c, true);
   ok = true;
   return QString("Crosshair moved to (%1, %2, %3).").arg(c[0]).arg(c[1]).arg(c[2]);
