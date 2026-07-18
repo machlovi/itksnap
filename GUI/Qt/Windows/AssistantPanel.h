@@ -95,6 +95,14 @@ private:
   QString toolLoadLabels(const QJsonObject &args, bool &ok);
   QString toolUndo(const QJsonObject &args, bool &ok);
   QString toolRedo(const QJsonObject &args, bool &ok);
+  // -- wave 1: contrast + label display + label lifecycle (from capability audit) --
+  QString toolAutoWindowLevel(const QJsonObject &args, bool &ok);
+  QString toolSetWindowLevel(const QJsonObject &args, bool &ok);
+  QString toolSetSegmentationOpacity(const QJsonObject &args, bool &ok);
+  QString toolSetLabelOpacity(const QJsonObject &args, bool &ok);
+  QString toolSetLabelVisibility(const QJsonObject &args, bool &ok);
+  QString toolCreateLabel(const QJsonObject &args, bool &ok);
+  QString toolDeleteLabel(const QJsonObject &args, bool &ok);
 
   // chat rendering
   void appendChat(const QString &who, const QString &text);

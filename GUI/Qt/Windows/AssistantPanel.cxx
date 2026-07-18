@@ -42,6 +42,7 @@
 #include "Generic3DModel.h"
 #include "SmoothLabelsModel.h"
 #include "InterpolateLabelModel.h"
+#include "IntensityCurveModel.h"
 #include "ImageCoordinateGeometry.h"
 #include "itkImageRegionConstIterator.h"
 #include "itkImageRegionConstIteratorWithIndex.h"
@@ -323,6 +324,34 @@ QJsonArray AssistantPanel::toolSchemas() const
   addTool("load_labels", "Load label descriptions (names/colors) from a text file.",
           pathProp("Absolute path to the label description file."), QJsonArray{"path"});
 
+  // ---- contrast / display / label lifecycle (capability audit) ----
+  addTool("auto_window_level",
+          "Automatically adjust the brightness/contrast (window/level) of the current image "
+          "to fit its intensity, so it displays well.", none);
+  { QJsonObject p; p["window"]=numObj("Window width (contrast). Optional.");
+    p["level"]=numObj("Window level/center (brightness). Optional.");
+    addTool("set_window_level",
+            "Set the display window (contrast) and/or level (brightness) of the current image "
+            "to specific values.", p); }
+  { QJsonObject p; p["opacity"]=intObj("Overlay opacity percent 0-100.");
+    addTool("set_segmentation_opacity",
+            "Set how opaque the segmentation overlay is drawn over the image (0=invisible, 100=solid).",
+            p, QJsonArray{"opacity"}); }
+  { QJsonObject p; p["label"]=intObj("Label id."); p["opacity"]=intObj("Opacity 0-255.");
+    addTool("set_label_opacity", "Set the opacity of one specific segmentation label.",
+            p, QJsonArray{"label","opacity"}); }
+  { QJsonObject p; p["label"]=intObj("Label id.");
+    QJsonObject vb; vb["type"]="boolean"; vb["description"]="true to show, false to hide."; p["visible"]=vb;
+    addTool("set_label_visibility", "Show or hide one segmentation label.",
+            p, QJsonArray{"label","visible"}); }
+  { QJsonObject p; p["name"]=strObj("Name for the new label.");
+    p["r"]=intObj("Red 0-255."); p["g"]=intObj("Green 0-255."); p["b"]=intObj("Blue 0-255.");
+    addTool("create_label", "Create a new segmentation label with a name and color, using the "
+            "next free id.", p, QJsonArray{"name"}); }
+  { QJsonObject p; p["label"]=intObj("Label id to delete.");
+    addTool("delete_label", "Delete a segmentation label: erase its voxels and remove it from "
+            "the label table.", p, QJsonArray{"label"}); }
+
   return tools;
 }
 
@@ -421,6 +450,13 @@ void AssistantPanel::dispatchToolCall(const QString &id, const QString &name,
     else if(name == "load_labels")        result = toolLoadLabels(args, ok);
     else if(name == "undo")               result = toolUndo(args, ok);
     else if(name == "redo")               result = toolRedo(args, ok);
+    else if(name == "auto_window_level")  result = toolAutoWindowLevel(args, ok);
+    else if(name == "set_window_level")   result = toolSetWindowLevel(args, ok);
+    else if(name == "set_segmentation_opacity") result = toolSetSegmentationOpacity(args, ok);
+    else if(name == "set_label_opacity")  result = toolSetLabelOpacity(args, ok);
+    else if(name == "set_label_visibility") result = toolSetLabelVisibility(args, ok);
+    else if(name == "create_label")       result = toolCreateLabel(args, ok);
+    else if(name == "delete_label")       result = toolDeleteLabel(args, ok);
     else { ok = false; result = QString("Unknown tool '%1'.").arg(name); }
     }
   catch(IRISException &exc)
@@ -942,6 +978,94 @@ QString AssistantPanel::toolLoadLabels(const QJsonObject &args, bool &ok)
   m_Model->GetDriver()->LoadLabelDescriptions(args["path"].toString().toUtf8().constData());
   ok = true;
   return QString("Loaded label descriptions from %1.").arg(args["path"].toString());
+}
+
+/* ------------------------------------------------------------------ */
+/* wave 1: contrast + label display + label lifecycle                  */
+/* ------------------------------------------------------------------ */
+QString AssistantPanel::toolAutoWindowLevel(const QJsonObject &, bool &ok)
+{
+  if(!m_Model->GetDriver()->IsMainImageLoaded()) { ok = false; return "No image is loaded."; }
+  m_Model->GetIntensityCurveModel()->OnAutoFitWindow();
+  ok = true;
+  return "Auto-adjusted the image window/level (contrast).";
+}
+
+QString AssistantPanel::toolSetWindowLevel(const QJsonObject &args, bool &ok)
+{
+  if(!m_Model->GetDriver()->IsMainImageLoaded()) { ok = false; return "No image is loaded."; }
+  IntensityCurveModel *icm = m_Model->GetIntensityCurveModel();
+  QStringList did;
+  if(args.contains("window"))
+    { icm->GetIntensityRangeModel(IntensityCurveModel::WINDOW)->SetValue(args["window"].toDouble()); did << "window"; }
+  if(args.contains("level"))
+    { icm->GetIntensityRangeModel(IntensityCurveModel::LEVEL)->SetValue(args["level"].toDouble()); did << "level"; }
+  if(did.isEmpty()) { ok = false; return "Provide a window and/or level value."; }
+  ok = true;
+  return QString("Set %1.").arg(did.join(" and "));
+}
+
+QString AssistantPanel::toolSetSegmentationOpacity(const QJsonObject &args, bool &ok)
+{
+  double pct = args["opacity"].toDouble();
+  pct = std::max(0.0, std::min(100.0, pct));
+  m_Model->GetDriver()->GetGlobalState()->SetSegmentationAlpha(pct / 100.0);
+  m_Model->GetDriver()->InvokeEvent(SegmentationChangeEvent());
+  ok = true;
+  return QString("Set segmentation overlay opacity to %1%.").arg((int)pct);
+}
+
+QString AssistantPanel::toolSetLabelOpacity(const QJsonObject &args, bool &ok)
+{
+  const int lab = args["label"].toInt();
+  int a = std::max(0, std::min(255, args["opacity"].toInt()));
+  ColorLabelTable *lt = m_Model->GetDriver()->GetColorLabelTable();
+  ColorLabel cl = lt->GetColorLabel(lab);
+  cl.SetAlpha((unsigned char)a);
+  lt->SetColorLabel(lab, cl);
+  ok = true;
+  return QString("Set label %1 opacity to %2/255.").arg(lab).arg(a);
+}
+
+QString AssistantPanel::toolSetLabelVisibility(const QJsonObject &args, bool &ok)
+{
+  const int lab = args["label"].toInt();
+  const bool vis = args["visible"].toBool();
+  ColorLabelTable *lt = m_Model->GetDriver()->GetColorLabelTable();
+  ColorLabel cl = lt->GetColorLabel(lab);
+  cl.SetVisible(vis);
+  lt->SetColorLabel(lab, cl);
+  ok = true;
+  return QString("%1 label %2.").arg(vis ? "Showing" : "Hiding").arg(lab);
+}
+
+QString AssistantPanel::toolCreateLabel(const QJsonObject &args, bool &ok)
+{
+  ColorLabelTable *lt = m_Model->GetDriver()->GetColorLabelTable();
+  LabelType id = lt->GetInsertionSpot(1);          // next free id >= 1
+  ColorLabel cl = lt->GetColorLabel(id);
+  cl.SetLabel(args["name"].toString().toUtf8().constData());
+  cl.SetRGB((unsigned char)(args.contains("r") ? args["r"].toInt() : 255),
+            (unsigned char)(args.contains("g") ? args["g"].toInt() : 200),
+            (unsigned char)(args.contains("b") ? args["b"].toInt() : 0));
+  cl.SetAlpha(255); cl.SetVisible(true);
+  lt->SetColorLabel(id, cl);
+  lt->SetColorLabelValid(id, true);
+  ok = true;
+  return QString("Created label %1 ('%2').").arg(id).arg(args["name"].toString());
+}
+
+QString AssistantPanel::toolDeleteLabel(const QJsonObject &args, bool &ok)
+{
+  IRISApplication *d = m_Model->GetDriver();
+  const int lab = args["label"].toInt();
+  size_t n = 0;
+  if(d->IsMainImageLoaded())
+    n = d->ReplaceLabel(0, (LabelType)lab);        // erase its voxels
+  d->GetColorLabelTable()->SetColorLabelValid((LabelType)lab, false);  // remove from table
+  d->InvokeEvent(SegmentationChangeEvent());
+  ok = true;
+  return QString("Deleted label %1 (erased %2 voxels and removed it).").arg(lab).arg((qulonglong)n);
 }
 
 /* ------------------------------------------------------------------ */
