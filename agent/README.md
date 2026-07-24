@@ -1,12 +1,12 @@
 # ITK-SNAP AI Agent Sidecar (`agent/`)
 
-A high-performance, tool-calling AI agent sidecar for **ITK-SNAP**. It bridges natural language prompts from doctors and researchers to ITK-SNAP's C++ image analysis engine (`SNAPRemoteControl`) over a local WebSocket connection (`ws://127.0.0.1:8077`).
+A high-performance, tool-calling AI agent sidecar for **ITK-SNAP**. It bridges natural language prompts from doctors and researchers to ITK-SNAP's C++ image analysis engine (`SNAPRemoteControl`) over a local WebSocket connection (`ws://127.0.0.1:8077/wsbridge`).
 
 ---
 
-## 🏗️ Architecture & LLM Design Patterns
+## 🏗️ Architecture & System Integration
 
-The agent is designed following industry-standard LLM agent design patterns (OpenAI Tool Calling Spec & Anthropic Agent Skills Architecture):
+The agent integrates into ITK-SNAP as a lightweight sidecar process, handling heavy language model inference while leaving the desktop GUI responsive:
 
 ```text
  ┌─────────────────────────────────────────────────────────────────────────────┐
@@ -16,124 +16,116 @@ The agent is designed following industry-standard LLM agent design patterns (Ope
  │   │   (Qt WebSocket UI)   │──────────────►│    (C++ RPC Command Engine) │   │
  │   └───────────┬───────────┘               └──────────────┬──────────────┘   │
  └───────────────┼──────────────────────────────────────────┼──────────────────┘
-                 │ WebSocket (`ws://127.0.0.1:8077`)        │ 65+ Tool Executions
+                 │ WebSocket (`ws://127.0.0.1:8077`)        │ 65+ Dynamic Tools
                  ▼                                          ▼
  ┌───────────────────────────────┐           ┌─────────────────────────────┐
  │       itksnap-agent           │           │       IRISApplication       │
  │    (FastAPI / WebSockets)     │           │      (Core Image Engine)    │
  └───────────────┬───────────────┘           └─────────────────────────────┘
-                 │ OpenAI-compatible / Anthropic API
+                 │ OpenAI / Anthropic APIs
                  ▼
  ┌───────────────────────────────┐
  │     Local or Cloud LLM        │
- │  (Qwen, Llama3, Ollama, etc.) │
+ │  (Qwen, Llama3, Claude, etc.) │
  └───────────────────────────────┘
 ```
 
 ---
 
 ## 🧠 Real-Time Reasoning & Thought Streaming
-The agent extracts reasoning steps (`reasoning_content` or `thinking_delta`) from advanced LLMs (such as DeepSeek R1 or Anthropic Claude) and streams them in real-time. In the ITK-SNAP GUI, these show up inside a beautifully formatted **🧠 Model Reasoning** panel before the final answer or tool calls.
+
+To support reasoning-oriented LLMs (like DeepSeek R1, OpenAI o1/o3-mini, and Claude 3.7):
+* **Streaming Protocol**: The Python agent server detects reasoning token generation (`reasoning_content` or `thinking_delta` chunks) and broadcasts them live as `type: "thought"` events.
+* **Preserving Whitespace**: Streamed text is inserted via QTextCursor plain text streams in the Qt GUI, preserving spaces, formatting, and layout structure exactly as generated.
+* **Brain Visualizer Box**: The Assistant Panel UI renders reasoning steps in real-time inside a dedicated purple accent card (**🧠 Model Reasoning**), auto-closing it cleanly when transitioning to final responses or tool calls.
 
 ---
 
-## 🛠️ Tool Calling & Skill System (LLM Best Practices)
+## 🛠️ Tool Calling & dynamic RPC Schemas
 
-### 1. Dynamic Tool Registration (`SNAPRemoteControl`)
-Tool schemas are **not hardcoded in Python**. When ITK-SNAP connects to the agent server, it registers its complete suite of **65+ C++ tool schemas** dynamically via a JSON-RPC `hello` message:
+### 1. Dynamic Tool Discovery
+Instead of hardcoding tool signatures in Python, the C++ client dynamically registers its entire capabilities catalog on handshake. ITK-SNAP sends a `hello` message containing **65+ dynamic tool schemas** compiled from the core application:
 
 ```json
 {
-  "name": "threshold_segment",
-  "description": "Segment voxels whose intensity falls within [lower, upper] range into a label.",
-  "parameters": {
-    "type": "object",
-    "properties": {
-      "lower": {"type": "number", "description": "Minimum intensity threshold"},
-      "upper": {"type": "number", "description": "Maximum intensity threshold"},
-      "label": {"type": "integer", "description": "Segmentation label ID"}
-    },
-    "required": ["lower"]
-  }
+  "type": "hello",
+  "tools": [
+    {
+      "name": "threshold_segment",
+      "description": "Segment voxels whose intensity is in [lower, upper] into a label.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "lower": {"type": "number", "description": "Minimum intensity"},
+          "upper": {"type": "number", "description": "Maximum intensity"},
+          "label": {"type": "integer", "description": "Label ID"}
+        },
+        "required": ["lower"]
+      }
+    }
+  ]
 }
 ```
 
-### 2. Multi-Step Expert Skills (`skills/<name>/SKILL.md`)
-Complex medical workflows (e.g. lesion volumetry reports, active contour snake segmentation, multi-structure labelling, noise cleanup) are structured as **Agent Skills**:
-
-- **Directory Layout**: Each skill lives in `skills/<name>/SKILL.md`.
-- **YAML Frontmatter Header**: Contains `name` and `description` triggers for LLM index matching.
-- **Progressive Disclosure**:
-  1. **Index**: Only skill names and descriptions are placed in the system prompt to keep context lightweight.
-  2. **Body**: When a user's request matches a skill, the step-by-step markdown procedure is loaded on demand via `use_skill(name)` or automatic trigger matching (`match_skill`).
-  3. **Reference Files**: Deep detail tables (`reference.md`) are loaded only when explicitly needed (`read_skill_file`).
-
-```text
-agent/server/skills/
- ├── active-contour-segmentation/
- │    ├── SKILL.md                 <-- Step-by-step procedure (YAML header + Markdown)
- │    └── reference.md             <-- Parameter tuning table
- ├── lesion-volumetry-report/
- │    ├── SKILL.md
- │    └── reference.md
- ├── multi-structure-segmentation/
- ├── prepare-display/
- └── segmentation-cleanup/
-```
+### 2. Multi-Step Expert Skills (`skills/`)
+Complex radiological procedures (active contours, tumor segmentation cleanup, windowing presets) are organized as **Agent Skills** with progressive disclosure:
+* **SKILL.md**: Frontmatter-indexed markdown procedure loaded on demand.
+* **reference.md**: Context tables containing detailed parameters, loaded only when explicitly requested.
 
 ---
 
-## 🚀 Running the Agent
+## 🚀 Getting Started
 
-### 1. Auto-Launch inside ITK-SNAP (Recommended)
-When you launch `ITK-SNAP.exe`, ITK-SNAP automatically detects `agent/` or `itksnap-agent.exe`, **spawns the agent server silently in the background**, and establishes the WebSocket link automatically.
+### 1. Auto-Launch inside ITK-SNAP
+When ITK-SNAP starts up, it automatically checks the application directory for `agent/` or `itksnap-agent.exe` and launches the sidecar server in the background.
 
 ### 2. Manual Developer Startup (Optional)
-If you want to run or debug the Python agent server independently:
+If running independently for testing or debugging:
 
 ```powershell
-# Navigate to agent folder
+# Navigate to agent directory
 cd agent
 
-# Activate virtual environment
+# Create and activate virtual environment
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 
-# Install dependencies
+# Install requirements
 pip install -r requirements.txt
 
-# Start agent server on port 8077
+# Start the agent server on port 8077
 python -m server
 ```
 
 ---
 
-## 🔗 Connecting Local LLM Endpoints
+## 🔗 Supported LLM Configurations
 
-You can point the agent at any local or cloud LLM server directly from the ITK-SNAP Assistant panel or via environment variables:
+You can configure the model source dynamically in the Assistant Panel or via environment variables:
 
 | LLM Engine | LLM Endpoint URL | Model ID |
 | :--- | :--- | :--- |
-| **Local vLLM / llama.cpp** | `http://localhost:11445/v1` | `qwen` / `llama-3.1` |
+| **Local vLLM / llama.cpp** | `http://localhost:11445/v1` | `qwen` / `llama` |
 | **Ollama** | `http://localhost:11434/v1` | `qwen2.5-coder` |
-| **OpenAI / LMStudio** | `http://localhost:1234/v1` | `gpt-4o` |
+| **Anthropic Cloud** | `https://api.anthropic.com/v1` | `claude-3-5-sonnet-20241022` |
 
 ---
 
-## 📁 Folder Structure
+## 📁 Project Directory Layout
 
 ```text
 agent/
  ├── server/
- │    ├── __main__.py       <-- Entry point
- │    ├── app.py            <-- FastAPI & WebSocket route handlers
- │    ├── agent.py          <-- Core LLM tool-calling loop & context manager
- │    ├── llm.py            <-- OpenAI/Anthropic/Ollama backend connectors
- │    ├── tools.py          <-- Synthetic server tools
- │    └── skills.py         <-- Progressive disclosure skill engine
- ├── web/                   <-- Standalone Web UI (HTML/JS/CSS)
- ├── eval/                  <-- Ground-truth evaluation harness & test suites
- ├── test.md                <-- 10 Advanced Knee MRI clinical test tasks
- ├── requirements.txt       <-- Python package dependencies
- └── README.md              <-- Agent documentation
+ │    ├── __main__.py       <-- Server entry point
+ │    ├── app.py            <-- FastAPI server & WS route management
+ │    ├── agent.py          <-- LangGraph React Graph & Native ReAct fallback
+ │    ├── llm.py            <-- Low-level HTTP stream parser for reasoning
+ │    ├── config.py         <-- Environment variable configurations
+ │    ├── tools.py          <-- Server-side helper tools
+ │    └── skills.py         <-- Progressive disclosure matching logic
+ ├── web/                   <-- Standalone web client interface
+ ├── eval/                  <-- Ground-truth evaluation harness
+ ├── test.md                <-- 10 advanced Knee MRI clinical test tasks
+ ├── requirements.txt       <-- Python dependency specifications
+ └── README.md              <-- This documentation file
 ```
