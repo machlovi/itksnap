@@ -209,7 +209,7 @@ async def wsbridge(websocket: WebSocket, sid: str):
 
                 async def do_turn(t=text):
                     try:
-                        await agent.run(host, t, history, send)
+                        await agent.run(host, t, sid, send)
                     except Exception as e:  # noqa: BLE001
                         await send({"type": "error", "text": f"agent error: {e}"})
                     await send({"type": "turn_end"})
