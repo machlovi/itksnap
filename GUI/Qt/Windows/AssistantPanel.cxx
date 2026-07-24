@@ -98,7 +98,7 @@ void AssistantPanel::ensureAgentServerRunning()
 
   const QString appDir = QCoreApplication::applicationDirPath();
 
-  // 1. Primary: Bundled standalone executable inside ITK-SNAP installation folder
+  // 1. Primary: Bundled standalone executable next to ITK-SNAP.exe
   QString bundledExe = appDir + "/itksnap-agent.exe";
 #ifndef Q_OS_WIN
   bundledExe = appDir + "/itksnap-agent";
@@ -112,11 +112,23 @@ void AssistantPanel::ensureAgentServerRunning()
     return;
   }
 
-  // 2. Secondary: Development virtualenv or relative path
+  // 2. Environment variable override (ITKSNAP_AGENT_PATH)
+  const QString envPath = QString::fromUtf8(qgetenv("ITKSNAP_AGENT_PATH"));
+  if(!envPath.isEmpty())
+  {
+    if(QFileInfo::exists(envPath))
+    {
+      qInfo() << "[Assistant] Launching AI Agent from ITKSNAP_AGENT_PATH:" << envPath;
+      appendChat("system", tr("Starting AI agent from ITKSNAP_AGENT_PATH..."));
+      QProcess::startDetached(envPath, QStringList());
+      return;
+    }
+  }
+
+  // 3. Relative developer path candidates (no hardcoded drive letters)
   const QStringList candidateAgentDirs = {
     appDir + "/itksnap-agent",
-    appDir + "/../itksnap-agent",
-    "D:/itksnap-agent"
+    appDir + "/../itksnap-agent"
   };
 
   for(const QString &dir : candidateAgentDirs)
@@ -134,6 +146,11 @@ void AssistantPanel::ensureAgentServerRunning()
       return;
     }
   }
+
+  // 4. Informative status message if agent binary is missing on first run
+  appendChat("system", tr("AI Agent binary (itksnap-agent.exe) not found in application directory.\n"
+                          "To use the assistant, ensure itksnap-agent.exe is located alongside ITK-SNAP.exe, "
+                          "or run the agent server externally on ws://127.0.0.1:8077."));
 }
 
 void AssistantPanel::connectToServer()

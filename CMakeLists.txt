@@ -1938,6 +1938,20 @@ ADD_CUSTOM_TARGET(itksnap_upload_release
 
 
 #--------------------------------------------------------------------------------
+# Install bundled ITK-SNAP AI Agent binary if available
+#--------------------------------------------------------------------------------
+SET(ITKSNAP_AGENT_EXE "" CACHE FILEPATH "Path to pre-built itksnap-agent.exe standalone executable")
+
+IF(NOT ITKSNAP_AGENT_EXE AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../itksnap-agent/dist/itksnap-agent.exe")
+  SET(ITKSNAP_AGENT_EXE "${CMAKE_CURRENT_SOURCE_DIR}/../itksnap-agent/dist/itksnap-agent.exe")
+ENDIF()
+
+IF(ITKSNAP_AGENT_EXE AND EXISTS "${ITKSNAP_AGENT_EXE}")
+  MESSAGE(STATUS "Packaging ITK-SNAP Agent binary: ${ITKSNAP_AGENT_EXE}")
+  INSTALL(PROGRAMS "${ITKSNAP_AGENT_EXE}" DESTINATION bin COMPONENT Runtime)
+ENDIF()
+
+#--------------------------------------------------------------------------------
 # Set up package target
 include(CPack)
 
