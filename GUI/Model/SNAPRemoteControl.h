@@ -89,6 +89,11 @@ private:
   QString toolGetLabelStats(const QJsonObject &args, bool &ok);
   QString toolSetROIBox(const QJsonObject &args, bool &ok);
   QString toolExportMesh(const QJsonObject &args, bool &ok);
+  QString toolSetTimePoint(const QJsonObject &args, bool &ok);
+  QString toolGetTimePointInfo(const QJsonObject &args, bool &ok);
+  QString toolVoxelToWorld(const QJsonObject &args, bool &ok);
+  QString toolWorldToVoxel(const QJsonObject &args, bool &ok);
+  QString toolSetOverlayOpacity(const QJsonObject &args, bool &ok);
 
   GlobalUIModel *m_Model = nullptr;
 };

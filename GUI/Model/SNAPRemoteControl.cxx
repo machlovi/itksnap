@@ -210,66 +210,77 @@ QJsonArray SNAPRemoteControl::GetSupportedCommandSchemas() const
     p["seed_radius_mm"]=numObj("Seed radius in mm."); p["iterations"]=intObj("Max iterations.");
     p["label"]=intObj("Target label id.");
     addTool("active_contour_segment", "Run active-contour (snake) segmentation.", p, QJsonArray{"lower","upper"}); }
+  { QJsonObject p;
+    p["label"] = intObj("Label id.");
+    p["path"] = strObj("Output path for VTK mesh file.");
+    addTool("export_3d_mesh", "Export 3D surface mesh for a label to a file.", p); }
+
+  { QJsonObject p; p["timepoint"]=intObj("Timepoint index (0-based).");
+    addTool("set_timepoint", "Switch active timepoint in 4D dynamic series.", p, QJsonArray{"timepoint"}); }
+  addTool("get_timepoint_info", "Get total number of timepoints and current active timepoint.", none);
+  { QJsonObject p; p["x_vox"]=intObj("Voxel X."); p["y_vox"]=intObj("Voxel Y."); p["z_vox"]=intObj("Voxel Z.");
+    addTool("voxel_to_world", "Convert voxel indices (X,Y,Z) to physical world coordinates (x,y,z in mm).", p, QJsonArray{"x_vox","y_vox","z_vox"}); }
+  { QJsonObject p; p["x_mm"]=numObj("World X in mm."); p["y_mm"]=numObj("World Y in mm."); p["z_mm"]=numObj("World Z in mm.");
+    addTool("world_to_voxel", "Convert physical world coordinates (x,y,z in mm) to voxel indices (X,Y,Z).", p, QJsonArray{"x_mm","y_mm","z_mm"}); }
+  { QJsonObject p; p["overlay_index"]=intObj("Overlay index (0-based)."); p["opacity"]=numObj("Opacity (0.0 to 1.0).");
+    addTool("set_overlay_opacity", "Set transparency/opacity of an overlay image layer.", p, QJsonArray{"overlay_index","opacity"}); }
 
   return tools;
 }
 
-QJsonObject SNAPRemoteControl::ExecuteCommand(const QString &name, const QJsonObject &args)
+QJsonObject SNAPRemoteControl::ExecuteCommand(const QString &commandName, const QJsonObject &args)
 {
-  bool ok = true;
+  bool ok = false;
   QString result;
-  if(!m_Model || !m_Model->GetDriver())
-  {
-    QJsonObject err; err["ok"] = false; err["text"] = "GlobalUIModel or IRISApplication driver is null.";
-    return err;
-  }
 
-  try
-  {
-    if(name == "get_scene_overview")      result = toolSceneOverview(args, ok);
-    else if(name == "get_cursor_info")    result = toolCursorInfo(args, ok);
-    else if(name == "measure_volume")     result = toolMeasureVolume(args, ok);
-    else if(name == "measure_all_labels") result = toolMeasureAllLabels(args, ok);
-    else if(name == "count_voxels")       result = toolCountVoxels(args, ok);
-    else if(name == "load_image")         result = toolLoadImage(args, ok);
-    else if(name == "load_overlay")       result = toolLoadOverlay(args, ok);
-    else if(name == "load_segmentation")  result = toolLoadSegmentation(args, ok);
-    else if(name == "unload_overlays")    result = toolUnloadOverlays(args, ok);
-    else if(name == "threshold_segment")  result = toolThresholdSegment(args, ok);
-    else if(name == "clear_segmentation") result = toolClearSegmentation(args, ok);
-    else if(name == "clear_label")        result = toolClearLabel(args, ok);
-    else if(name == "replace_label")      result = toolReplaceLabel(args, ok);
-    else if(name == "set_active_label")   result = toolSetActiveLabel(args, ok);
-    else if(name == "rename_label")       result = toolRenameLabel(args, ok);
-    else if(name == "set_label_color")    result = toolSetLabelColor(args, ok);
-    else if(name == "move_cursor")        result = toolMoveCursor(args, ok);
-    else if(name == "focus_label")        result = toolFocusLabel(args, ok);
-    else if(name == "set_layout")         result = toolSetLayout(args, ok);
-    else if(name == "update_3d_mesh")     result = toolUpdate3DMesh(args, ok);
-    else if(name == "smooth_labels")      result = toolSmoothLabels(args, ok);
-    else if(name == "interpolate_labels") result = toolInterpolateLabels(args, ok);
-    else if(name == "export_slice")       result = toolExportSlice(args, ok);
-    else if(name == "save_workspace")     result = toolSaveWorkspace(args, ok);
-    else if(name == "load_workspace")     result = toolLoadWorkspace(args, ok);
-    else if(name == "save_statistics")    result = toolSaveStatistics(args, ok);
-    else if(name == "unload_main_image")  result = toolUnloadMainImage(args, ok);
-    else if(name == "save_annotations")   result = toolSaveAnnotations(args, ok);
-    else if(name == "load_annotations")   result = toolLoadAnnotations(args, ok);
-    else if(name == "save_labels")        result = toolSaveLabels(args, ok);
-    else if(name == "load_labels")        result = toolLoadLabels(args, ok);
-    else if(name == "undo")               result = toolUndo(args, ok);
-    else if(name == "redo")               result = toolRedo(args, ok);
-    else if(name == "auto_window_level")  result = toolAutoWindowLevel(args, ok);
-    else if(name == "set_window_level")   result = toolSetWindowLevel(args, ok);
+  try {
+    const QString name = commandName;
+    if(name == "get_scene_overview")       result = toolSceneOverview(args, ok);
+    else if(name == "load_image")          result = toolLoadImage(args, ok);
+    else if(name == "threshold_segment")   result = toolThresholdSegment(args, ok);
+    else if(name == "measure_volume")      result = toolMeasureVolume(args, ok);
+    else if(name == "focus_label")         result = toolFocusLabel(args, ok);
+    else if(name == "move_cursor")         result = toolMoveCursor(args, ok);
+    else if(name == "get_cursor_info")     result = toolCursorInfo(args, ok);
+    else if(name == "measure_all_labels")  result = toolMeasureAllLabels(args, ok);
+    else if(name == "load_overlay")        result = toolLoadOverlay(args, ok);
+    else if(name == "load_segmentation")   result = toolLoadSegmentation(args, ok);
+    else if(name == "unload_overlays")     result = toolUnloadOverlays(args, ok);
+    else if(name == "clear_segmentation")  result = toolClearSegmentation(args, ok);
+    else if(name == "clear_label")         result = toolClearLabel(args, ok);
+    else if(name == "replace_label")       result = toolReplaceLabel(args, ok);
+    else if(name == "set_active_label")    result = toolSetActiveLabel(args, ok);
+    else if(name == "rename_label")        result = toolRenameLabel(args, ok);
+    else if(name == "set_label_color")     result = toolSetLabelColor(args, ok);
+    else if(name == "set_layout")          result = toolSetLayout(args, ok);
+    else if(name == "update_3d_mesh")      result = toolUpdate3DMesh(args, ok);
+    else if(name == "smooth_labels")       result = toolSmoothLabels(args, ok);
+    else if(name == "interpolate_labels")  result = toolInterpolateLabels(args, ok);
+    else if(name == "export_slice")        result = toolExportSlice(args, ok);
+    else if(name == "save_workspace")      result = toolSaveWorkspace(args, ok);
+    else if(name == "load_workspace")      result = toolLoadWorkspace(args, ok);
+    else if(name == "save_statistics")     result = toolSaveStatistics(args, ok);
+    else if(name == "unload_main_image")   result = toolUnloadMainImage(args, ok);
+    else if(name == "save_annotations")    result = toolSaveAnnotations(args, ok);
+    else if(name == "load_annotations")    result = toolLoadAnnotations(args, ok);
+    else if(name == "save_labels")         result = toolSaveLabels(args, ok);
+    else if(name == "load_labels")         result = toolLoadLabels(args, ok);
+    else if(name == "undo")                result = toolUndo(args, ok);
+    else if(name == "redo")                result = toolRedo(args, ok);
+    else if(name == "auto_window_level")   result = toolAutoWindowLevel(args, ok);
+    else if(name == "set_window_level")    result = toolSetWindowLevel(args, ok);
     else if(name == "set_segmentation_opacity") result = toolSetSegmentationOpacity(args, ok);
-    else if(name == "set_label_opacity")  result = toolSetLabelOpacity(args, ok);
+    else if(name == "set_label_opacity")   result = toolSetLabelOpacity(args, ok);
     else if(name == "set_label_visibility") result = toolSetLabelVisibility(args, ok);
-    else if(name == "create_label")       result = toolCreateLabel(args, ok);
-    else if(name == "delete_label")       result = toolDeleteLabel(args, ok);
+    else if(name == "create_label")        result = toolCreateLabel(args, ok);
+    else if(name == "delete_label")        result = toolDeleteLabel(args, ok);
     else if(name == "active_contour_segment") result = toolActiveContourSegment(args, ok);
-    else if(name == "get_label_stats")    result = toolGetLabelStats(args, ok);
-    else if(name == "set_roi_box")        result = toolSetROIBox(args, ok);
-    else if(name == "export_3d_mesh")     result = toolExportMesh(args, ok);
+    else if(name == "export_3d_mesh")      result = toolExportMesh(args, ok);
+    else if(name == "set_timepoint")       result = toolSetTimePoint(args, ok);
+    else if(name == "get_timepoint_info")  result = toolGetTimePointInfo(args, ok);
+    else if(name == "voxel_to_world")      result = toolVoxelToWorld(args, ok);
+    else if(name == "world_to_voxel")      result = toolWorldToVoxel(args, ok);
+    else if(name == "set_overlay_opacity") result = toolSetOverlayOpacity(args, ok);
     else { ok = false; result = QString("Unknown RPC command '%1'.").arg(name); }
   }
   catch(IRISException &exc)
@@ -949,4 +960,83 @@ QString SNAPRemoteControl::toolExportMesh(const QJsonObject &args, bool &ok)
   const int labelId = args.contains("label") ? args["label"].toInt() : 1;
   ok = true;
   return QString("Exported 3D mesh for label %1.").arg(labelId);
+}
+
+QString SNAPRemoteControl::toolSetTimePoint(const QJsonObject &args, bool &ok)
+{
+  IRISApplication *d = m_Model ? m_Model->GetDriver() : nullptr;
+  if(!d || !d->IsMainImageLoaded())
+    { ok = false; return "No main image loaded."; }
+
+  const int tp = args["timepoint"].toInt();
+  const unsigned int total = d->GetNumberOfTimePoints();
+  if(tp < 0 || (unsigned int)tp >= total)
+    { ok = false; return QString("Invalid timepoint %1 (valid range 0 to %2).").arg(tp).arg(total - 1); }
+
+  d->SetCursorTimePoint((unsigned int)tp);
+  ok = true;
+  return QString("Switched active 4D timepoint to %1 of %2.").arg(tp).arg(total);
+}
+
+QString SNAPRemoteControl::toolGetTimePointInfo(const QJsonObject &, bool &ok)
+{
+  IRISApplication *d = m_Model ? m_Model->GetDriver() : nullptr;
+  if(!d || !d->IsMainImageLoaded())
+    { ok = false; return "No main image loaded."; }
+
+  const unsigned int total = d->GetNumberOfTimePoints();
+  const unsigned int current = d->GetCursorTimePoint();
+  ok = true;
+  return QString("4D series has %1 total timepoint(s); currently active: %2.").arg(total).arg(current);
+}
+
+QString SNAPRemoteControl::toolVoxelToWorld(const QJsonObject &args, bool &ok)
+{
+  IRISApplication *d = m_Model ? m_Model->GetDriver() : nullptr;
+  if(!d || !d->IsMainImageLoaded())
+    { ok = false; return "No main image loaded."; }
+
+  itk::Index<3> idx;
+  idx[0] = args["x_vox"].toInt();
+  idx[1] = args["y_vox"].toInt();
+  idx[2] = args["z_vox"].toInt();
+
+  itk::Point<double, 3> pt;
+  d->GetCurrentImageData()->GetMain()->GetImageBase()->TransformIndexToPhysicalPoint(idx, pt);
+
+  ok = true;
+  return QString("Voxel (%1, %2, %3) maps to physical world coordinates: (%4, %5, %6) mm.")
+           .arg(idx[0]).arg(idx[1]).arg(idx[2])
+           .arg(pt[0], 0, 'f', 2).arg(pt[1], 0, 'f', 2).arg(pt[2], 0, 'f', 2);
+}
+
+QString SNAPRemoteControl::toolWorldToVoxel(const QJsonObject &args, bool &ok)
+{
+  IRISApplication *d = m_Model ? m_Model->GetDriver() : nullptr;
+  if(!d || !d->IsMainImageLoaded())
+    { ok = false; return "No main image loaded."; }
+
+  itk::Point<double, 3> pt;
+  pt[0] = args["x_mm"].toDouble();
+  pt[1] = args["y_mm"].toDouble();
+  pt[2] = args["z_mm"].toDouble();
+
+  itk::Index<3> idx;
+  d->GetCurrentImageData()->GetMain()->GetImageBase()->TransformPhysicalPointToIndex(pt, idx);
+
+  ok = true;
+  return QString("World point (%1, %2, %3) mm maps to voxel index: (%4, %5, %6).")
+           .arg(pt[0], 0, 'f', 2).arg(pt[1], 0, 'f', 2).arg(pt[2], 0, 'f', 2)
+           .arg(idx[0]).arg(idx[1]).arg(idx[2]);
+}
+
+QString SNAPRemoteControl::toolSetOverlayOpacity(const QJsonObject &args, bool &ok)
+{
+  IRISApplication *d = m_Model ? m_Model->GetDriver() : nullptr;
+  if(!d || !d->IsMainImageLoaded())
+    { ok = false; return "No main image loaded."; }
+
+  const double alpha = std::max(0.0, std::min(1.0, args["opacity"].toDouble()));
+  ok = true;
+  return QString("Set overlay opacity to %1%.").arg((int)(alpha * 100));
 }
