@@ -27,3 +27,7 @@ CLAUDE.local.md
 
 # clangd cache
 .cache/
+
+# ITK-SNAP dynamic / session files
+*.tsi
+
