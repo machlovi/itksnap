@@ -1,86 +1,133 @@
-# ITK-SNAP Agent (MVP)
+# ITK-SNAP AI Agent Sidecar (`agent/`)
 
-A natural-language **chat + live viewer** that drives medical-image tasks
-(load, segment, measure, view) through a tool-calling LLM. This is the "brain"
-that will later drop **inside ITK-SNAP** as a Qt dock panel (QWebEngineView +
-QWebChannel). Right now it runs standalone so you can test the whole loop today.
+A high-performance, tool-calling AI agent sidecar for **ITK-SNAP**. It bridges natural language prompts from doctors and researchers to ITK-SNAP's C++ image analysis engine (`SNAPRemoteControl`) over a local WebSocket connection (`ws://127.0.0.1:8077`).
 
+---
+
+## 🏗️ Architecture & LLM Design Patterns
+
+The agent is designed following industry-standard LLM agent design patterns (OpenAI Tool Calling Spec & Anthropic Agent Skills Architecture):
+
+```text
+ ┌─────────────────────────────────────────────────────────────────────────────┐
+ │                            ITK-SNAP Desktop App                             │
+ │   ┌───────────────────────┐               ┌─────────────────────────────┐   │
+ │   │    AssistantPanel     │               │      SNAPRemoteControl      │   │
+ │   │   (Qt WebSocket UI)   │──────────────►│    (C++ RPC Command Engine) │   │
+ │   └───────────┬───────────┘               └──────────────┬──────────────┘   │
+ └───────────────┼──────────────────────────────────────────┼──────────────────┘
+                 │ WebSocket (`ws://127.0.0.1:8077`)        │ ~35 Tool Executions
+                 ▼                                          ▼
+ ┌───────────────────────────────┐           ┌─────────────────────────────┐
+ │       itksnap-agent           │           │       IRISApplication       │
+ │    (FastAPI / WebSockets)     │           │      (Core Image Engine)    │
+ └───────────────┬───────────────┘           └─────────────────────────────┘
+                 │ OpenAI-compatible / Anthropic API
+                 ▼
+ ┌───────────────────────────────┐
+ │     Local or Cloud LLM        │
+ │  (Qwen, Llama3, Ollama, etc.) │
+ └───────────────────────────────┘
 ```
- web chat UI  ──ws──▶  FastAPI  ──▶  Agent loop  ──▶  Tools (SimpleITK)
-   (live viewer) ◀── slice PNG ◀──                     load / segment / volume
+
+---
+
+## 🛠️ Tool Calling & Skill System (LLM Best Practices)
+
+### 1. Dynamic Tool Registration (`SNAPRemoteControl`)
+Tool schemas are **not hardcoded in Python**. When ITK-SNAP connects to the agent server, it registers its complete suite of **~35 C++ tool schemas** dynamically via a JSON-RPC `hello` message:
+
+```json
+{
+  "name": "threshold_segment",
+  "description": "Segment voxels whose intensity falls within [lower, upper] range into a label.",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "lower": {"type": "number", "description": "Minimum intensity threshold"},
+      "upper": {"type": "number", "description": "Maximum intensity threshold"},
+      "label": {"type": "integer", "description": "Segmentation label ID"}
+    },
+    "required": ["lower"]
+  }
+}
 ```
 
-## What works now
-- Chat over a websocket with a **live tool timeline** (see each step happen).
-- A **live viewer**: axial/coronal/sagittal slices with segmentation overlay and a scrub slider.
-- Tools: `load_demo`, `load_image`, `threshold_segment`, `compute_volume`, `list_labels`, `show_slice`.
-- **Backend-agnostic LLM**: `mock` (default, no setup), `ollama`, `anthropic`, `openai`.
+### 2. Multi-Step Expert Skills (`skills/<name>/SKILL.md`)
+Complex medical workflows (e.g. lesion volumetry reports, active contour snake segmentation, multi-structure labelling, noise cleanup) are structured as **Agent Skills**:
 
-## Quick start (Windows / PowerShell)
+- **Directory Layout**: Each skill lives in `skills/<name>/SKILL.md`.
+- **YAML Frontmatter Header**: Contains `name` and `description` triggers for LLM index matching.
+- **Progressive Disclosure**:
+  1. **Index**: Only skill names and descriptions are placed in the system prompt to keep context lightweight.
+  2. **Body**: When a user's request matches a skill, the step-by-step markdown procedure is loaded on demand via `use_skill(name)` or automatic trigger matching (`match_skill`).
+  3. **Reference Files**: Deep detail tables (`reference.md`) are loaded only when explicitly needed (`read_skill_file`).
+
+```text
+agent/server/skills/
+ ├── active-contour-segmentation/
+ │    ├── SKILL.md                 <-- Step-by-step procedure (YAML header + Markdown)
+ │    └── reference.md             <-- Parameter tuning table
+ ├── lesion-volumetry-report/
+ │    ├── SKILL.md
+ │    └── reference.md
+ ├── multi-structure-segmentation/
+ ├── prepare-display/
+ └── segmentation-cleanup/
+```
+
+---
+
+## 🚀 Running the Agent
+
+### 1. Auto-Launch inside ITK-SNAP (Recommended)
+When you launch `ITK-SNAP.exe`, ITK-SNAP automatically detects `agent/` or `itksnap-agent.exe`, **spawns the agent server silently in the background**, and establishes the WebSocket link automatically.
+
+### 2. Manual Developer Startup (Optional)
+If you want to run or debug the Python agent server independently:
+
 ```powershell
-cd D:\itksnap-agent
-python -m venv .venv; .\.venv\Scripts\Activate.ps1
+# Navigate to agent folder
+cd agent
+
+# Activate virtual environment
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+
+# Install dependencies
 pip install -r requirements.txt
-.\run.ps1                      # starts on http://127.0.0.1:8077
-```
-Open http://127.0.0.1:8077 and try:
-1. `load demo`
-2. `segment the bright nodule`
-3. `what is its volume?`
-4. `show a coronal slice`  (or drag the slider)
 
-The mock LLM makes this fully deterministic with **no keys and no GPU**.
-
-## Point it at your llama.cpp cluster model (live testing)
-`llama-server` exposes an OpenAI-compatible `/v1` API, which is exactly what the
-agent's `OpenAICompatBackend` speaks (same design as RadAssistant).
-
-**Critical: launch llama-server with `--jinja`** — tool calling only works when
-the model's chat template is active. Use a tool-capable *instruct* model
-(Qwen2.5-Instruct, Llama-3.1-Instruct, Hermes, functionary); a base model will
-not call tools.
-
-```bash
-# On the cluster / GPU node:
-llama-server -m your-model.gguf --host 0.0.0.0 --port 8080 --jinja
-#   add  --reasoning-format none   if it's a reasoning model (deepseek-r1, qwen3)
-```
-```powershell
-# On your machine: tunnel the port, then run pointed at it
-ssh -N -L 8080:gpu-node:8080 you@cluster       # llama.cpp defaults to 8080
-cd D:\itksnap-agent
-$env:AGENT_LLM="openai"
-$env:LLM_BASE_URL="http://localhost:8080/v1"
-$env:LLM_MODEL="your-model"                    # any string; /models shows the id
-.\run.ps1
-```
-Or just click **⚙** in the UI, set Base URL `http://localhost:8080/v1`, hit
-**Test /models**, then **Apply** — no restart. Watch the model's reasoning
-stream, tool choices, and arguments live in the chat timeline: that is how you
-see how it interprets each query.
-
-Troubleshooting:
-- **Model replies but never calls a tool** → you forgot `--jinja`, or the model
-  has no tool template. Verify with `curl localhost:8080/v1/models`.
-- **"streamed only reasoning" error** → relaunch with `--reasoning-format none`.
-- **404** → the Base URL must end in `/v1` (not the web UI page).
-
-## Layout
-```
-server/  config.py  llm.py  tools.py  agent.py  app.py  __main__.py
-web/     index.html  app.js  style.css
+# Start agent server on port 8077
+python -m server
 ```
 
-## How this becomes "inside ITK-SNAP"
-The tool *contract* (names + args) stays identical. Only two things change:
-1. `tools.py` bodies get replaced by **QWebChannel** calls into ITK-SNAP's live
-   viewer / Logic layer, and real models (nnInteractive, SAM2, a text-promptable
-   model) replace `threshold_segment`.
-2. `web/` is loaded by a **QWebEngineView** in a dock widget instead of the browser.
+---
 
-So everything you test here is the real agent + UI; embedding is a thin C++ shell.
+## 🔗 Connecting Local LLM Endpoints
 
-## Roadmap
-- [ ] `/v2/process_text_prompt` backend in a forked `itksnap-dls` (text -> mask)
-- [ ] Token-level streaming from real backends
-- [ ] Qt dock + AgentBridge (QWebChannel) in a fork of `pyushkevich/itksnap`
+You can point the agent at any local or cloud LLM server directly from the ITK-SNAP Assistant panel or via environment variables:
+
+| LLM Engine | LLM Endpoint URL | Model ID |
+| :--- | :--- | :--- |
+| **Local vLLM / llama.cpp** | `http://localhost:11445/v1` | `qwen` / `llama-3.1` |
+| **Ollama** | `http://localhost:11434/v1` | `qwen2.5-coder` |
+| **OpenAI / LMStudio** | `http://localhost:1234/v1` | `gpt-4o` |
+
+---
+
+## 📁 Folder Structure
+
+```text
+agent/
+ ├── server/
+ │    ├── __main__.py       <-- Entry point
+ │    ├── app.py            <-- FastAPI & WebSocket route handlers
+ │    ├── agent.py          <-- Core LLM tool-calling loop & context manager
+ │    ├── llm.py            <-- OpenAI/Anthropic/Ollama backend connectors
+ │    ├── tools.py          <-- Synthetic server tools
+ │    └── skills.py         <-- Progressive disclosure skill engine
+ ├── web/                   <-- Standalone Web UI (HTML/JS/CSS)
+ ├── eval/                  <-- Ground-truth evaluation harness & test suites
+ ├── requirements.txt       <-- Python package dependencies
+ └── README.md              <-- Agent documentation
+```
