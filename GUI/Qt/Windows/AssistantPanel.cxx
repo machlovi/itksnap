@@ -2,7 +2,8 @@
 
   ITK-SNAP Assistant Panel -- implementation.
   Delegates tool schemas and tool execution to SNAPRemoteControl.
-  Includes auto-launch capability for bundled and sidecar agent servers.
+  Includes auto-launch capability for bundled and sidecar agent servers,
+  along with first-run UI setup guidance.
 
 =========================================================================*/
 #include "AssistantPanel.h"
@@ -32,11 +33,11 @@ AssistantPanel::AssistantPanel(QWidget *parent)
 
   // --- LLM endpoint row: point the agent at a real model ---
   auto *llmRow = new QHBoxLayout();
-  m_LlmEndpoint = new QLineEdit("http://localhost:11440", this);
-  m_LlmEndpoint->setToolTip(tr("LLM API URL or host:port (e.g. http://localhost:11440 or 10.0.0.5:8000)"));
-  m_LlmModel = new QLineEdit("localmodel", this);
-  m_LlmModel->setToolTip(tr("Model id served by that endpoint"));
-  m_LlmModel->setMaximumWidth(140);
+  m_LlmEndpoint = new QLineEdit("http://localhost:11445/v1", this);
+  m_LlmEndpoint->setToolTip(tr("LLM API URL (e.g. http://localhost:11445/v1 or http://localhost:11440)"));
+  m_LlmModel = new QLineEdit("qwen", this);
+  m_LlmModel->setToolTip(tr("Model id served by that endpoint (e.g. qwen, llama3, gpt-4o)"));
+  m_LlmModel->setMaximumWidth(120);
   m_LlmApply = new QPushButton(tr("Use LLM"), this);
   llmRow->addWidget(new QLabel(tr("LLM:"), this));
   llmRow->addWidget(m_LlmEndpoint, 1);
@@ -99,9 +100,10 @@ void AssistantPanel::ensureAgentServerRunning()
   const QString appDir = QCoreApplication::applicationDirPath();
 
   // 1. Primary: Bundled standalone executable next to ITK-SNAP.exe
+#ifdef Q_OS_WIN
   QString bundledExe = appDir + "/itksnap-agent.exe";
-#ifndef Q_OS_WIN
-  bundledExe = appDir + "/itksnap-agent";
+#else
+  QString bundledExe = appDir + "/itksnap-agent";
 #endif
 
   if(QFileInfo::exists(bundledExe))
@@ -125,7 +127,7 @@ void AssistantPanel::ensureAgentServerRunning()
     }
   }
 
-  // 3. Relative developer path candidates (no hardcoded drive letters)
+  // 3. Relative developer path candidates
   const QStringList candidateAgentDirs = {
     appDir + "/itksnap-agent",
     appDir + "/../itksnap-agent"
@@ -147,10 +149,9 @@ void AssistantPanel::ensureAgentServerRunning()
     }
   }
 
-  // 4. Informative status message if agent binary is missing on first run
-  appendChat("system", tr("AI Agent binary (itksnap-agent.exe) not found in application directory.\n"
-                          "To use the assistant, ensure itksnap-agent.exe is located alongside ITK-SNAP.exe, "
-                          "or run the agent server externally on ws://127.0.0.1:8077."));
+  // 4. First-run status message if agent binary is missing
+  appendChat("system", tr("AI Agent sidecar binary (itksnap-agent) not found in application directory.\n"
+                          "Ensure itksnap-agent is located alongside ITK-SNAP.exe, or start the agent server externally on ws://127.0.0.1:8077."));
 }
 
 void AssistantPanel::connectToServer()
@@ -163,7 +164,8 @@ void AssistantPanel::connectToServer()
 void AssistantPanel::onConnected()
 {
   qInfo() << "[Assistant] connected to" << m_ServerUrl;
-  appendChat("system", tr("Connected. Registering ITK-SNAP tools."));
+  appendChat("system", tr("Connected to AI Agent sidecar."));
+  appendChat("system", tr("💡 Tip: Enter your LLM Endpoint URL and Model ID above, then click 'Use LLM' to start chatting."));
   m_Reconnect->setVisible(false);
   if(m_RetryTimer) m_RetryTimer->stop();
   sendHello();
@@ -246,7 +248,7 @@ void AssistantPanel::onSendClicked()
   const QString text = m_Input->text().trimmed();
   if(text.isEmpty()) return;
   if(m_Socket->state() != QAbstractSocket::ConnectedState)
-    { appendChat("error", tr("Not connected to the agent server yet.")); return; }
+    { appendChat("error", tr("Not connected to the agent server yet. Connect to the sidecar agent first.")); return; }
 
   appendChat("you", text);
   m_Input->clear();
