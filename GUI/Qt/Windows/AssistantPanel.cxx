@@ -86,8 +86,12 @@ AssistantPanel::AssistantPanel(QWidget *parent)
   m_Input->setPlaceholderText(tr("Ask the assistant..."));
   m_Send = new QPushButton(tr("Send"), this);
   m_StopBtn = new QPushButton(tr("Stop"), this);
-  m_StopBtn->setStyleSheet("QPushButton { background-color: #d9534f; color: white; border-radius: 3px; font-weight: bold; padding: 4px 8px; } QPushButton:hover { background-color: #c9302c; }");
-  m_StopBtn->setVisible(false);
+  m_StopBtn->setStyleSheet(
+    "QPushButton { background-color: #d9534f; color: white; border-radius: 3px; font-weight: bold; padding: 4px 10px; }"
+    "QPushButton:hover { background-color: #c9302c; }"
+    "QPushButton:disabled { background-color: #e0e0e0; color: #888888; border: 1px solid #ccc; }"
+  );
+  m_StopBtn->setEnabled(false);
   m_Reconnect = new QPushButton(tr("Reconnect"), this);
   m_Reconnect->setVisible(false);
   row->addWidget(m_Input, 1);
@@ -320,8 +324,8 @@ void AssistantPanel::onTextMessageReceived(const QString &message)
     {
     m_StreamBuffer.clear();
     appendChat("assistant", e["text"].toString());
-    m_Send->setVisible(true);
-    m_StopBtn->setVisible(false);
+    m_Send->setEnabled(true);
+    m_StopBtn->setEnabled(false);
     }
   else if(type == "tool_call")
     {
@@ -331,13 +335,13 @@ void AssistantPanel::onTextMessageReceived(const QString &message)
   else if(type == "error")
     {
     appendChat("error", e["text"].toString());
-    m_Send->setVisible(true);
-    m_StopBtn->setVisible(false);
+    m_Send->setEnabled(true);
+    m_StopBtn->setEnabled(false);
     }
   else if(type == "turn_end")
     {
-    m_Send->setVisible(true);
-    m_StopBtn->setVisible(false);
+    m_Send->setEnabled(true);
+    m_StopBtn->setEnabled(false);
     }
   else if(type == "llm_set")
     {
@@ -354,8 +358,8 @@ void AssistantPanel::onSendClicked()
 
   appendChat("you", text);
   m_Input->clear();
-  m_Send->setVisible(false);
-  m_StopBtn->setVisible(true);
+  m_Send->setEnabled(false);
+  m_StopBtn->setEnabled(true);
 
   QJsonObject msg;
   msg["type"] = "user";
@@ -365,8 +369,8 @@ void AssistantPanel::onSendClicked()
 
 void AssistantPanel::onStopClicked()
 {
-  m_Send->setVisible(true);
-  m_StopBtn->setVisible(false);
+  m_Send->setEnabled(true);
+  m_StopBtn->setEnabled(false);
   if(m_Socket && m_Socket->state() == QAbstractSocket::ConnectedState)
   {
     QJsonObject msg;
