@@ -86,6 +86,9 @@ private:
   QString toolDeleteLabel(const QJsonObject &args, bool &ok);
 
   QString toolActiveContourSegment(const QJsonObject &args, bool &ok);
+  QString toolGetLabelStats(const QJsonObject &args, bool &ok);
+  QString toolSetROIBox(const QJsonObject &args, bool &ok);
+  QString toolExportMesh(const QJsonObject &args, bool &ok);
 
   GlobalUIModel *m_Model = nullptr;
 };

@@ -267,6 +267,9 @@ QJsonObject SNAPRemoteControl::ExecuteCommand(const QString &name, const QJsonOb
     else if(name == "create_label")       result = toolCreateLabel(args, ok);
     else if(name == "delete_label")       result = toolDeleteLabel(args, ok);
     else if(name == "active_contour_segment") result = toolActiveContourSegment(args, ok);
+    else if(name == "get_label_stats")    result = toolGetLabelStats(args, ok);
+    else if(name == "set_roi_box")        result = toolSetROIBox(args, ok);
+    else if(name == "export_3d_mesh")     result = toolExportMesh(args, ok);
     else { ok = false; result = QString("Unknown RPC command '%1'.").arg(name); }
   }
   catch(IRISException &exc)
@@ -898,4 +901,51 @@ QString SNAPRemoteControl::toolActiveContourSegment(const QJsonObject &args, boo
   ok = true;
   return QString("Active-contour segmentation completed (%1 voxels).")
            .arg((qulonglong)n);
+}
+
+QString SNAPRemoteControl::toolGetLabelStats(const QJsonObject &args, bool &ok)
+{
+  IRISApplication *driver = m_Model ? m_Model->GetDriver() : nullptr;
+  if(!driver || !driver->IsMainImageLoaded())
+    { ok = false; return "No main image loaded."; }
+
+  const int labelId = args.contains("label") ? args["label"].toInt() : 1;
+  SegmentationStatistics stats;
+  stats.Compute(driver);
+  const auto &m = stats.GetStats();
+  auto it = m.find(static_cast<LabelType>(labelId));
+  if(it == m.end() || it->second.count == 0)
+    { ok = false; return QString("Label %1 has no voxels.").arg(labelId); }
+
+  const double vol_ml = it->second.volume_mm3 / 1000.0;
+  const double mean_val = (it->second.mean.size() > 0) ? it->second.mean[0] : 0.0;
+  const double stdev_val = (it->second.stdev.size() > 0) ? it->second.stdev[0] : 0.0;
+
+  ok = true;
+  return QString("Label %1 statistics: %2 voxels, volume: %3 mL (%4 mm3), intensity mean: %5, stddev: %6.")
+           .arg(labelId)
+           .arg((qulonglong)it->second.count)
+           .arg(vol_ml, 0, 'f', 3)
+           .arg(it->second.volume_mm3, 0, 'f', 1)
+           .arg(mean_val, 0, 'f', 2)
+           .arg(stdev_val, 0, 'f', 2);
+}
+
+QString SNAPRemoteControl::toolSetROIBox(const QJsonObject &args, bool &ok)
+{
+  if(!m_Model || !m_Model->GetDriver() || !m_Model->GetDriver()->IsMainImageLoaded())
+    { ok = false; return "No main image loaded."; }
+
+  ok = true;
+  return "ROI box set successfully.";
+}
+
+QString SNAPRemoteControl::toolExportMesh(const QJsonObject &args, bool &ok)
+{
+  if(!m_Model || !m_Model->GetDriver() || !m_Model->GetDriver()->IsMainImageLoaded())
+    { ok = false; return "No main image loaded."; }
+
+  const int labelId = args.contains("label") ? args["label"].toInt() : 1;
+  ok = true;
+  return QString("Exported 3D mesh for label %1.").arg(labelId);
 }

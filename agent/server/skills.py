@@ -112,10 +112,22 @@ _TRIGGERS = {
         "active contour", "active-contour", "snake", "region grow", "region-grow",
         "region growing", "region competition", "level set", "level-set", "grow the",
         "grow a", "grow this", "evolve", "bubble", "seed"],
-    "lesion-volumetry-report": [
-        "volume", "volumetry", "quantif", "how big", "size of", "measure and",
-        "measure the", "report", "statistics", "stats", "characteri", "workup",
-        "work up", "cc of", "ml of"],
+    "brain-tumor-multimodal-workup": [
+        "brain tumor", "glioma", "glioblastoma", "tumor ring", "necrotic", "edema",
+        "flair", "t1+c", "t1c", "enhancing tumor", "tumor workup", "lesion workup",
+        "ncr", "net", "et", "ed"],
+    "radiation-therapy-oar-contouring": [
+        "radiation", "radiotherapy", "oar", "organ at risk", "gtv", "ctv", "ptv",
+        "target volume", "contouring", "treatment planning", "vtk mesh", "mesh export",
+        "bladder", "rectum", "prostate", "brainstem"],
+    "radiomics-intensity-stats": [
+        "radiomics", "intensity stats", "mean intensity", "stddev", "min max",
+        "signal intensity", "hu value", "hounsfield", "quantitative stats",
+        "histogram stats", "intensity range"],
+    "longitudinal-followup-volumetry": [
+        "longitudinal", "follow-up", "followup", "baseline vs", "growth rate",
+        "percentage change", "recist", "rano", "progression", "regression",
+        "shrinkage", "timepoints", "over time"],
     "multi-structure-segmentation": [
         "multiple", "several", "each label", "separate label", "separate labels",
         "two tissue", "structures", "and the spleen", "both kidneys", "organs",
