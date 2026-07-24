@@ -195,6 +195,12 @@ async def wsbridge(websocket: WebSocket, sid: str):
             elif mtype == "tool_result":
                 host.resolve(msg.get("id"), msg)
 
+            elif mtype == "stop":
+                if active["turn"] and not active["turn"].done():
+                    active["turn"].cancel()
+                    await send({"type": "status", "text": "turn cancelled by user"})
+                    await send({"type": "turn_end"})
+
             elif mtype == "user":
                 text = (msg.get("text") or "").strip()
                 if not text:

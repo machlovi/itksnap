@@ -42,6 +42,7 @@ private slots:
   void onDisconnected();
   void onTextMessageReceived(const QString &message);
   void onSendClicked();
+  void onStopClicked();
   void onReconnectClicked();
   void onApplyLlmClicked();
   void onProviderIndexChanged(int index);
@@ -71,6 +72,7 @@ private:
   QLineEdit     *m_ApiKeyInput  = nullptr;
   QPushButton   *m_LlmApply      = nullptr;
   QPushButton   *m_Send         = nullptr;
+  QPushButton   *m_StopBtn      = nullptr;
   QPushButton   *m_Reconnect    = nullptr;
   QTimer        *m_RetryTimer   = nullptr;
 
