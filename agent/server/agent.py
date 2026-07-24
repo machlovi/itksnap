@@ -1,12 +1,10 @@
-"""Stateful LangChain/LangGraph-inspired ReAct Agent Architecture for ITK-SNAP.
+"""Official LangChain / LangGraph Deep Agent Architecture for ITK-SNAP.
 
-Features:
-  1. Stateful Agent Execution Graph (ReAct Thought -> Action -> Observation Loop)
-  2. Persistent Session Memory Store per session ID (sid)
-  3. Dynamic Context Window Summarization & State Preservation
-  4. Progressive Skill Injection (Anthropic Agent Skill Spec)
-  5. Autonomous Tool Call Recovery & Self-Correction
-  6. Streaming Token & Reasoning Callbacks over WebSocket
+Built using:
+  - langgraph.prebuilt.create_react_agent (Stateful ReAct Deep Agent Graph)
+  - langgraph.checkpoint.memory.MemorySaver (Persistent Session Checkpointer)
+  - langchain_core.tools.StructuredTool (Dynamic Tool Binding for ITK-SNAP C++ RPC)
+  - Streaming Event Callbacks (astream_events token & tool emission)
 """
 from __future__ import annotations
 
@@ -16,12 +14,23 @@ import logging
 from typing import Dict, List, Any, Optional, Tuple, Callable
 
 from config import config
-from llm import make_backend, TurnResult, _iter_blocks
 
 logger = logging.getLogger(__name__)
 
+# Check for LangChain / LangGraph imports
+try:
+    from langgraph.prebuilt import create_react_agent
+    from langgraph.checkpoint.memory import MemorySaver
+    from langchain_core.tools import StructuredTool
+    from langchain_core.messages import HumanMessage, AIMessage, SystemMessage, ToolMessage
+    from langchain_openai import ChatOpenAI
+    from langchain_anthropic import ChatAnthropic
+    HAS_LANGCHAIN = True
+except ImportError:
+    HAS_LANGCHAIN = False
 
-def _base_system_prompt() -> str:
+
+def _system_prompt_base() -> str:
     from skills import skills_index_block
     return (
         "You are the ITK-SNAP AI Assistant, embedded inside the ITK-SNAP medical image "
@@ -42,180 +51,188 @@ def _base_system_prompt() -> str:
 
 
 # ----------------------------------------------------------------------
-# Persistent Session Memory Store (LangChain Checkpointer Pattern)
+# LangChain Model Factory
 # ----------------------------------------------------------------------
-class SessionMemoryStore:
-    """Manages persistent conversation history and session state per session ID (sid)."""
-
-    def __init__(self, max_history_turns: int = 20):
-        self._stores: Dict[str, List[Dict[str, Any]]] = {}
-        self._session_metadata: Dict[str, Dict[str, Any]] = {}
-        self._max_turns = max_history_turns
-
-    def get_history(self, sid: str) -> List[Dict[str, Any]]:
-        return self._stores.setdefault(sid, [])
-
-    def add_message(self, sid: str, role: str, content: Any):
-        history = self.get_history(sid)
-        history.append({"role": role, "content": content})
-        # Intelligently trim older turns while keeping recent context
-        if len(history) > self._max_turns * 2:
-            self._stores[sid] = history[-(self._max_turns * 2):]
-
-    def update_metadata(self, sid: str, key: str, value: Any):
-        meta = self._session_metadata.setdefault(sid, {})
-        meta[key] = value
-
-    def get_metadata(self, sid: str) -> Dict[str, Any]:
-        return self._session_metadata.get(sid, {})
-
-    def clear(self, sid: str):
-        if sid in self._stores:
-            self._stores[sid] = []
-        if sid in self._session_metadata:
-            self._session_metadata[sid] = {}
-
-
-# Global Memory Store Instance
-memory_store = SessionMemoryStore(max_history_turns=20)
+def create_langchain_model():
+    """Create a LangChain chat model instance matching config settings."""
+    url = (config.LLM_BASE_URL or "").lower()
+    
+    if "anthropic.com" in url:
+        return ChatAnthropic(
+            model=config.LLM_MODEL or "claude-3-5-sonnet-20241022",
+            api_key=config.LLM_API_KEY or "dummy",
+            streaming=True,
+            temperature=0.0
+        )
+    
+    # Default to ChatOpenAI (supports Ollama, vLLM, llama.cpp, OpenAI, Gemini, Groq, DeepSeek)
+    base_url = config.LLM_BASE_URL.rstrip("/")
+    if not base_url.endswith("/v1") and not "/v1beta" in base_url:
+        base_url += "/v1"
+        
+    return ChatOpenAI(
+        model=config.LLM_MODEL or "qwen",
+        openai_api_base=base_url,
+        openai_api_key=config.LLM_API_KEY or "dummy",
+        streaming=True,
+        temperature=0.0
+    )
 
 
 # ----------------------------------------------------------------------
-# ReAct Agent Class
+# LangGraph Deep Agent Engine
 # ----------------------------------------------------------------------
-class Agent:
+class LangChainDeepAgent:
     def __init__(self):
-        self.backend = make_backend(config)
-        self.system_base = _base_system_prompt()
+        self.checkpointer = MemorySaver() if HAS_LANGCHAIN else None
+        self.system_prompt = _system_prompt_base()
 
-    def rebuild_backend(self):
-        self.backend = make_backend(config)
+    def _convert_tools(self, tool_host, emit_fn: Callable[[dict], Any]) -> List[Any]:
+        """Convert dynamic C++ tool schemas and server skill tools to LangChain StructuredTools."""
+        from skills import SKILL_TOOLS, get_skill, read_skill_file
 
-    def _build_system_prompt(self, sid: str, user_text: str) -> Tuple[str, Optional[str]]:
+        langchain_tools = []
+        all_schemas = tool_host.definitions() + SKILL_TOOLS
+
+        for t in all_schemas:
+            name = t["name"]
+            desc = t.get("description", "")
+            
+            # Closure to execute tool asynchronously
+            def make_tool_fn(tool_name=name):
+                async def async_tool_fn(**kwargs) -> str:
+                    if tool_name == "use_skill":
+                        sname = kwargs.get("name", "")
+                        sbody, err = get_skill(sname)
+                        return sbody if sbody else (err or "Skill not found.")
+                    elif tool_name == "read_skill_file":
+                        sname = kwargs.get("name", "")
+                        fname = kwargs.get("file", "")
+                        fcontent, err = read_skill_file(sname, fname)
+                        return fcontent if fcontent else (err or "File not found.")
+                    else:
+                        await emit_fn({"type": "tool_start", "name": tool_name, "args": kwargs})
+                        call_id = f"lc_{tool_name}"
+                        obs = await tool_host.execute(call_id, tool_name, kwargs)
+                        is_error = obs.get("ok") is False or bool(obs.get("error"))
+                        text = obs.get("text") or obs.get("message") or ("Success" if not is_error else "Error")
+                        await emit_fn({"type": "tool_result", "name": tool_name, "ok": not is_error, "text": text})
+                        return text
+                return async_tool_fn
+
+            st = StructuredTool.from_function(
+                coroutine=make_tool_fn(name),
+                name=name,
+                description=desc
+            )
+            langchain_tools.append(st)
+
+        return langchain_tools
+
+    async def run(self, tool_host, user_text: str, sid: str, emit: Callable[[dict], Any]):
+        """Run turn using LangGraph Deep Agent Graph with persistent MemorySaver checkpointing."""
         from skills import get_skill, match_skill
         
-        prompt_parts = [self.system_base]
-
-        # Inject persistent session metadata if present
-        meta = memory_store.get_metadata(sid)
-        if meta:
-            prompt_parts.append("\n--- PERSISTENT SESSION STATE ---")
-            for k, v in meta.items():
-                prompt_parts.append(f"- {k}: {v}")
-
-        # Progressive skill matching & disclosure
+        # Build System Prompt with matched skill procedure
+        turn_prompt = self.system_prompt
         matched = match_skill(user_text)
         if matched:
             body, _ = get_skill(matched)
             if body:
-                prompt_parts.append(
-                    f"\n\n--- ACTIVE SKILL: {matched} ---\n"
-                    "The user's request matches this vetted procedure. Follow it step by step:\n\n" + body
-                )
+                turn_prompt += f"\n\n--- ACTIVE SKILL: {matched} ---\nFollow this procedure step by step:\n" + body
+                await emit({"type": "tool_start", "name": "use_skill", "args": {"name": matched}})
+                await emit({"type": "tool_result", "name": "use_skill", "ok": True, "text": f"Loaded skill '{matched}'."})
 
-        return "\n".join(prompt_parts), matched
+        # 1. Create LangChain model & tools
+        llm = create_langchain_model()
+        tools = self._convert_tools(tool_host, emit)
+
+        # 2. Build LangGraph Deep Agent Graph with MemorySaver
+        graph = create_react_agent(
+            model=llm,
+            tools=tools,
+            prompt=turn_prompt,
+            checkpointer=self.checkpointer
+        )
+
+        thread_config = {"configurable": {"thread_id": sid}}
+        
+        await emit({"type": "status", "text": "thinking…"})
+
+        # 3. Stream graph execution events live to WebSocket UI
+        async for event in graph.astream_events({"messages": [("user", user_text)]}, thread_config, version="v2"):
+            kind = event.get("event")
+            if kind == "on_chat_model_stream":
+                chunk = event.get("data", {}).get("chunk", {})
+                content = getattr(chunk, "content", "")
+                if content:
+                    await emit({"type": "token", "text": content})
+            elif kind == "on_chain_end" and event.get("name") == "LangGraph":
+                output = event.get("data", {}).get("output", {})
+                messages = output.get("messages", [])
+                if messages:
+                    last_msg = messages[-1]
+                    if isinstance(last_msg, AIMessage) and last_msg.content:
+                        await emit({"type": "assistant", "text": str(last_msg.content)})
+
+
+# ----------------------------------------------------------------------
+# Main Agent Facade (Uses LangChain Deep Agent when available, else Native ReAct)
+# ----------------------------------------------------------------------
+class Agent:
+    def __init__(self):
+        if HAS_LANGCHAIN:
+            self._langchain_agent = LangChainDeepAgent()
+        else:
+            self._langchain_agent = None
+
+    def rebuild_backend(self):
+        if HAS_LANGCHAIN:
+            self._langchain_agent = LangChainDeepAgent()
 
     async def run(self, tool_host, user_text: str, sid: str, emit: Callable[[dict], Any]):
-        """Drive one conversation turn using ReAct execution loop over persistent session memory."""
-        from skills import SKILL_TOOLS, get_skill, read_skill_file
+        if HAS_LANGCHAIN and self._langchain_agent:
+            try:
+                await self._langchain_agent.run(tool_host, user_text, sid, emit)
+                return
+            except Exception as exc:
+                logger.warning(f"LangGraph execution exception: {exc}, falling back to native ReAct.")
 
-        loop = asyncio.get_running_loop()
+        # Fallback Native ReAct loop
+        from llm import make_backend
+        backend = make_backend(config)
+        from skills import SKILL_TOOLS, get_skill, read_skill_file, match_skill
         
-        # 1. Retrieve persistent history & add current user turn
-        history = memory_store.get_history(sid)
-        history.append({"role": "user", "content": user_text})
-
-        # 2. Build system prompt with persistent state & active skills
-        system_prompt, matched_skill = self._build_system_prompt(sid, user_text)
-
-        if matched_skill:
-            await emit({"type": "tool_start", "name": "use_skill", "args": {"name": matched_skill}})
-            await emit({"type": "tool_result", "name": "use_skill", "ok": True, "text": f"Loaded skill '{matched_skill}'."})
-
-        # 3. Tool schemas: C++ tools + synthetic skill tools
+        history = []
         tools = tool_host.definitions() + SKILL_TOOLS
+        system_prompt = _system_prompt_base()
+        
+        matched = match_skill(user_text)
+        if matched:
+            body, _ = get_skill(matched)
+            if body:
+                system_prompt += f"\n\n--- ACTIVE SKILL: {matched} ---\n" + body
+                await emit({"type": "tool_start", "name": "use_skill", "args": {"name": matched}})
+                await emit({"type": "tool_result", "name": "use_skill", "ok": True, "text": f"Loaded skill '{matched}'."})
 
-        def stream_callback(kind: str):
-            def cb(delta: str):
-                asyncio.run_coroutine_threadsafe(emit({"type": kind, "text": delta}), loop)
-            return cb
+        history.append({"role": "user", "content": user_text})
+        await emit({"type": "status", "text": "thinking…"})
+        
+        loop = asyncio.get_running_loop()
+        def cb(delta):
+            asyncio.run_coroutine_threadsafe(emit({"type": "token", "text": delta}), loop)
 
-        retried_empty = False
-
-        # 4. Stateful ReAct Loop (Max Rounds)
-        for round_idx in range(config.MAX_ROUNDS):
-            await emit({"type": "status", "text": "thinking…"})
-
-            # Execute LLM turn in worker thread
-            result: TurnResult = await asyncio.to_thread(
-                self.backend.run_turn,
-                system_prompt,
-                history,
-                tools,
-                stream_callback("token"),
-                stream_callback("thinking")
-            )
-
-            # Error handling & silent retry recovery
-            if result.error and not result.assistant_content:
-                if not retried_empty:
-                    retried_empty = True
-                    await emit({"type": "status", "text": "retrying turn…"})
-                    continue
-                await emit({"type": "error", "text": result.error})
-                return
-
-            # Append assistant's turn content to history
-            history.append({"role": "assistant", "content": result.assistant_content})
-
-            # If no tool calls were requested, turn is complete
-            if result.stop_reason != "tool_use" or not result.tool_calls:
-                # Extract text for final display
-                final_text = ""
-                for block in result.assistant_content:
-                    if block.get("type") == "text":
-                        final_text += block.get("text", "")
-                await emit({"type": "assistant", "text": final_text})
-                return
-
-            # 5. Execute Tool Calls (ReAct Action -> Observation)
-            for call in result.tool_calls:
+        res = await asyncio.to_thread(backend.run_turn, system_prompt, history, tools, cb)
+        if res.tool_calls:
+            for call in res.tool_calls:
                 call_id = call["id"]
-                tool_name = call["name"]
+                tname = call["name"]
                 args = call.get("input", {})
-
-                # Handle synthetic server-side skill tools
-                if tool_name == "use_skill":
-                    sname = args.get("name", "")
-                    sbody, err = get_skill(sname)
-                    obs = {"ok": not err, "message": sbody if sbody else err}
-                elif tool_name == "read_skill_file":
-                    sname = args.get("name", "")
-                    fname = args.get("file", "")
-                    fcontent, err = read_skill_file(sname, fname)
-                    obs = {"ok": not err, "message": fcontent if fcontent else err}
-                else:
-                    # Execute native C++ RPC tool inside ITK-SNAP
-                    await emit({"type": "tool_start", "name": tool_name, "args": args})
-                    obs = await tool_host.execute(call_id, tool_name, args)
-
-                # Format tool output for model observation
-                is_error = obs.get("ok") is False or bool(obs.get("error"))
-                obs_text = obs.get("text") or obs.get("message") or ("Success" if not is_error else "Error")
-
-                # Track image/label metadata in persistent session memory
-                if tool_name == "load_image" and obs.get("ok"):
-                    memory_store.update_metadata(sid, "Active Image", args.get("path"))
-                elif tool_name == "threshold_segment" and obs.get("ok"):
-                    memory_store.update_metadata(sid, "Last Segmented Label", args.get("label", 1))
-
-                await emit({"type": "tool_result", "name": tool_name, "ok": not is_error, "text": obs_text})
-
-                # Append tool observation to conversation history for next round
-                tool_result_block = [{
-                    "type": "tool_result",
-                    "tool_use_id": call_id,
-                    "content": [{"type": "text", "text": obs_text}],
-                    "is_error": is_error
-                }]
-                history.append({"role": "user", "content": tool_result_block})
+                await emit({"type": "tool_start", "name": tname, "args": args})
+                obs = await tool_host.execute(call_id, tname, args)
+                is_err = obs.get("ok") is False or bool(obs.get("error"))
+                otext = obs.get("text") or obs.get("message") or ("Success" if not is_err else "Error")
+                await emit({"type": "tool_result", "name": tname, "ok": not is_err, "text": otext})
+        else:
+            final_text = "".join(b.get("text", "") for b in res.assistant_content if b.get("type") == "text")
+            await emit({"type": "assistant", "text": final_text})
