@@ -818,7 +818,7 @@ QString SNAPRemoteControl::toolSetLabelVisibility(const QJsonObject &args, bool 
 QString SNAPRemoteControl::toolCreateLabel(const QJsonObject &args, bool &ok)
 {
   ColorLabelTable *lt = m_Model->GetDriver()->GetColorLabelTable();
-  LabelType id = lt->GetInsertionSpot(1);
+  LabelType id = args.contains("label") ? static_cast<LabelType>(args["label"].toInt()) : lt->GetInsertionSpot(1);
   ColorLabel cl = lt->GetColorLabel(id);
   cl.SetLabel(args["name"].toString().toUtf8().constData());
   cl.SetRGB((unsigned char)(args.contains("r") ? args["r"].toInt() : 255),
@@ -827,6 +827,7 @@ QString SNAPRemoteControl::toolCreateLabel(const QJsonObject &args, bool &ok)
   cl.SetAlpha(255); cl.SetVisible(true);
   lt->SetColorLabel(id, cl);
   lt->SetColorLabelValid(id, true);
+  m_Model->GetDriver()->InvokeEvent(SegmentationChangeEvent());
   ok = true;
   return QString("Created label %1 ('%2').").arg(id).arg(args["name"].toString());
 }
