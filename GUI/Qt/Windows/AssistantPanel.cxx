@@ -3,7 +3,8 @@
   ITK-SNAP Assistant Panel -- implementation.
   Delegates tool schemas and tool execution to SNAPRemoteControl.
   Includes auto-launch capability for bundled and sidecar agent servers,
-  along with first-run UI setup guidance.
+  along with multi-provider LLM endpoint configuration (Local, OpenAI,
+  Anthropic, Gemini, Groq, DeepSeek).
 
 =========================================================================*/
 #include "AssistantPanel.h"
@@ -14,6 +15,7 @@
 #include <QTextBrowser>
 #include <QLineEdit>
 #include <QPushButton>
+#include <QComboBox>
 #include <QJsonDocument>
 #include <QWebSocket>
 #include <QTimer>
@@ -31,19 +33,48 @@ AssistantPanel::AssistantPanel(QWidget *parent)
   auto *layout = new QVBoxLayout(this);
   layout->setContentsMargins(6, 6, 6, 6);
 
-  // --- LLM endpoint row: point the agent at a real model ---
+  // --- Row 1: LLM Provider selection & Apply ---
+  auto *providerRow = new QHBoxLayout();
+  m_ProviderCombo = new QComboBox(this);
+  m_ProviderCombo->addItem("Local / Custom (/v1)", "custom");
+  m_ProviderCombo->addItem("OpenAI Cloud", "openai");
+  m_ProviderCombo->addItem("Anthropic Cloud", "anthropic");
+  m_ProviderCombo->addItem("Google Gemini", "gemini");
+  m_ProviderCombo->addItem("Groq Cloud", "groq");
+  m_ProviderCombo->addItem("DeepSeek Cloud", "deepseek");
+  m_ProviderCombo->addItem("Ollama (Local)", "ollama");
+
+  m_LlmApply = new QPushButton(tr("Use LLM"), this);
+  m_LlmApply->setToolTip(tr("Apply selected LLM endpoint and model settings"));
+  providerRow->addWidget(new QLabel(tr("Provider:"), this));
+  providerRow->addWidget(m_ProviderCombo, 1);
+  providerRow->addWidget(m_LlmApply);
+  layout->addLayout(providerRow);
+
+  // --- Row 2: Endpoint URL & Model ID ---
   auto *llmRow = new QHBoxLayout();
   m_LlmEndpoint = new QLineEdit("http://localhost:11445/v1", this);
-  m_LlmEndpoint->setToolTip(tr("LLM API URL (e.g. http://localhost:11445/v1 or http://localhost:11440)"));
+  m_LlmEndpoint->setToolTip(tr("LLM API base URL"));
   m_LlmModel = new QLineEdit("qwen", this);
-  m_LlmModel->setToolTip(tr("Model id served by that endpoint (e.g. qwen, llama3, gpt-4o)"));
-  m_LlmModel->setMaximumWidth(120);
-  m_LlmApply = new QPushButton(tr("Use LLM"), this);
-  llmRow->addWidget(new QLabel(tr("LLM:"), this));
+  m_LlmModel->setToolTip(tr("Model ID (e.g. qwen, gpt-4o, claude-3-5-sonnet-20241022)"));
+  m_LlmModel->setMaximumWidth(140);
+  llmRow->addWidget(new QLabel(tr("URL:"), this));
   llmRow->addWidget(m_LlmEndpoint, 1);
+  llmRow->addWidget(new QLabel(tr("Model:"), this));
   llmRow->addWidget(m_LlmModel);
-  llmRow->addWidget(m_LlmApply);
   layout->addLayout(llmRow);
+
+  // --- Row 3: API Key field (for Cloud Providers) ---
+  auto *keyRow = new QHBoxLayout();
+  m_ApiKeyInput = new QLineEdit(this);
+  m_ApiKeyInput->setEchoMode(QLineEdit::Password);
+  m_ApiKeyInput->setPlaceholderText(tr("Optional API Key for Cloud Services (sk-...)"));
+  keyRow->addWidget(new QLabel(tr("API Key:"), this));
+  keyRow->addWidget(m_ApiKeyInput, 1);
+  layout->addLayout(keyRow);
+
+  connect(m_ProviderCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
+          this, &AssistantPanel::onProviderIndexChanged);
   connect(m_LlmApply, &QPushButton::clicked, this, &AssistantPanel::onApplyLlmClicked);
 
   m_Transcript = new QTextBrowser(this);
@@ -83,6 +114,53 @@ AssistantPanel::AssistantPanel(QWidget *parent)
 AssistantPanel::~AssistantPanel()
 {
   if(m_Socket) { m_Socket->close(); m_Socket->deleteLater(); }
+}
+
+void AssistantPanel::onProviderIndexChanged(int index)
+{
+  const QString p = m_ProviderCombo->itemData(index).toString();
+  if(p == "openai")
+  {
+    m_LlmEndpoint->setText("https://api.openai.com/v1");
+    m_LlmModel->setText("gpt-4o");
+    m_ApiKeyInput->setPlaceholderText(tr("Required OpenAI API Key (sk-...)"));
+  }
+  else if(p == "anthropic")
+  {
+    m_LlmEndpoint->setText("https://api.anthropic.com/v1");
+    m_LlmModel->setText("claude-3-5-sonnet-20241022");
+    m_ApiKeyInput->setPlaceholderText(tr("Required Anthropic API Key (sk-ant-...)"));
+  }
+  else if(p == "gemini")
+  {
+    m_LlmEndpoint->setText("https://generativelanguage.googleapis.com/v1beta/openai");
+    m_LlmModel->setText("gemini-2.0-flash");
+    m_ApiKeyInput->setPlaceholderText(tr("Required Google Gemini API Key"));
+  }
+  else if(p == "groq")
+  {
+    m_LlmEndpoint->setText("https://api.groq.com/openai/v1");
+    m_LlmModel->setText("llama-3.3-70b-versatile");
+    m_ApiKeyInput->setPlaceholderText(tr("Required Groq API Key (gsk_...)"));
+  }
+  else if(p == "deepseek")
+  {
+    m_LlmEndpoint->setText("https://api.deepseek.com/v1");
+    m_LlmModel->setText("deepseek-chat");
+    m_ApiKeyInput->setPlaceholderText(tr("Required DeepSeek API Key (sk-...)"));
+  }
+  else if(p == "ollama")
+  {
+    m_LlmEndpoint->setText("http://localhost:11434/v1");
+    m_LlmModel->setText("qwen2.5-coder");
+    m_ApiKeyInput->setPlaceholderText(tr("Optional API Key for local Ollama"));
+  }
+  else // custom / local
+  {
+    m_LlmEndpoint->setText("http://localhost:11445/v1");
+    m_LlmModel->setText("qwen");
+    m_ApiKeyInput->setPlaceholderText(tr("Optional API Key for custom endpoint"));
+  }
 }
 
 void AssistantPanel::SetModel(GlobalUIModel *model)
@@ -167,7 +245,7 @@ void AssistantPanel::onConnected()
 {
   qInfo() << "[Assistant] connected to" << m_ServerUrl;
   appendChat("system", tr("Connected to AI Agent sidecar."));
-  appendChat("system", tr("💡 Tip: Enter your LLM Endpoint URL and Model ID above, then click 'Use LLM' to start chatting."));
+  appendChat("system", tr("💡 Select an LLM Provider above (or enter a custom URL), provide an API key if required, then click 'Use LLM' to start."));
   m_Reconnect->setVisible(false);
   if(m_RetryTimer) m_RetryTimer->stop();
   sendHello();
@@ -192,13 +270,21 @@ void AssistantPanel::onApplyLlmClicked()
 {
   if(m_Socket->state() != QAbstractSocket::ConnectedState)
     { appendChat("error", tr("Not connected to the agent server yet.")); return; }
+
   const QString ep = m_LlmEndpoint->text().trimmed();
   const QString mdl = m_LlmModel->text().trimmed();
-  appendChat("system", tr("Pointing the assistant at %1 (model: %2) ...").arg(ep, mdl));
+  const QString key = m_ApiKeyInput->text().trimmed();
+
+  appendChat("system", tr("Configuring LLM provider: %1 (model: %2) ...").arg(ep, mdl));
+
   QJsonObject msg;
   msg["type"] = "set_llm";
   msg["base_url"] = ep;
   msg["model"] = mdl;
+  if(!key.isEmpty())
+  {
+    msg["api_key"] = key;
+  }
   sendJson(msg);
 }
 
@@ -241,7 +327,7 @@ void AssistantPanel::onTextMessageReceived(const QString &message)
     }
   else if(type == "llm_set")
     {
-    appendChat("system", tr("LLM updated: %1 (model: %2)").arg(e["base_url"].toString(), e["model"].toString()));
+    appendChat("system", tr("LLM configured successfully: %1").arg(e["label"].toString()));
     }
 }
 

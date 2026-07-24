@@ -20,6 +20,7 @@ class GlobalUIModel;
 class QTextBrowser;
 class QLineEdit;
 class QPushButton;
+class QComboBox;
 class QWebSocket;
 class QTimer;
 
@@ -43,6 +44,7 @@ private slots:
   void onSendClicked();
   void onReconnectClicked();
   void onApplyLlmClicked();
+  void onProviderIndexChanged(int index);
 
 private:
   // protocol & auto-launch
@@ -60,15 +62,17 @@ private:
   GlobalUIModel     *m_Model = nullptr;
   SNAPRemoteControl  m_RemoteControl;
 
-  QWebSocket    *m_Socket     = nullptr;
-  QTextBrowser  *m_Transcript = nullptr;
-  QLineEdit     *m_Input      = nullptr;
-  QLineEdit     *m_LlmEndpoint = nullptr;
-  QLineEdit     *m_LlmModel    = nullptr;
-  QPushButton   *m_LlmApply    = nullptr;
-  QPushButton   *m_Send       = nullptr;
-  QPushButton   *m_Reconnect  = nullptr;
-  QTimer        *m_RetryTimer = nullptr;
+  QWebSocket    *m_Socket       = nullptr;
+  QTextBrowser  *m_Transcript   = nullptr;
+  QLineEdit     *m_Input        = nullptr;
+  QComboBox     *m_ProviderCombo= nullptr;
+  QLineEdit     *m_LlmEndpoint  = nullptr;
+  QLineEdit     *m_LlmModel     = nullptr;
+  QLineEdit     *m_ApiKeyInput  = nullptr;
+  QPushButton   *m_LlmApply      = nullptr;
+  QPushButton   *m_Send         = nullptr;
+  QPushButton   *m_Reconnect    = nullptr;
+  QTimer        *m_RetryTimer   = nullptr;
 
   QString m_ServerUrl = "ws://127.0.0.1:8077/wsbridge/itksnap";
   QString m_StreamBuffer;
