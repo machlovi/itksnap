@@ -550,6 +550,7 @@ SET(UI_GENERIC_CXX
   GUI/Model/SnakeROIModel.cxx
   GUI/Model/SnakeROIResampleModel.cxx
   GUI/Model/SnakeWizardModel.cxx
+  GUI/Model/SNAPRemoteControl.cxx
   GUI/Model/StateManagement.cxx
   GUI/Model/SynchronizationModel.cxx
   GUI/Model/UIAction.cxx
@@ -625,6 +626,7 @@ SET(UI_GENERIC_HEADERS
   GUI/Model/RegistrationModel.h
   GUI/Model/ReorientImageModel.h
   GUI/Model/SaveModifiedLayersModel.h
+  GUI/Model/SNAPRemoteControl.h
   GUI/Model/SNAPUIFlag.h
   GUI/Model/SNAPUIFlag.txx
   GUI/Model/SliceWindowCoordinator.h
@@ -1428,7 +1430,7 @@ add_test(NAME IRISApplicationTest COMMAND logic_api_test)
 
 # Headless ground-truth harness for the LLM assistant (agent eval)
 ADD_EXECUTABLE(assistant_eval Testing/Logic/assistant_eval.cxx)
-TARGET_LINK_LIBRARIES(assistant_eval ${SNAP_EXTERNAL_LIBS} itksnaplogic)
+TARGET_LINK_LIBRARIES(assistant_eval ${SNAP_EXTERNAL_LIBS} itksnaplogic itksnapui_model)
 TARGET_INCLUDE_DIRECTORIES(assistant_eval PUBLIC ${SNAP_INCLUDE_DIRS})
 
 ADD_EXECUTABLE(remote_image_load_test

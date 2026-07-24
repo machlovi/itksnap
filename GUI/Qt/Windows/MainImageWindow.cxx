@@ -273,7 +273,7 @@ MainImageWindow::MainImageWindow(QWidget *parent) :
   this->addDockWidget(Qt::RightDockWidgetArea, m_DockRight);
 
   // Assistant (LLM chat) dock -- independent of the wizard dock stack
-  m_DockAssistant = new QDockWidget(tr("Assistant"), this);
+  m_DockAssistant = new QDockWidget(tr("ITKSNAP"), this);
   m_DockAssistant->setAllowedAreas(Qt::RightDockWidgetArea | Qt::LeftDockWidgetArea);
   m_DockAssistant->setFeatures(
         QDockWidget::DockWidgetFloatable |
