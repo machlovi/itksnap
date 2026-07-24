@@ -1,4 +1,4 @@
-# ITK-SNAP AI Agent Sidecar (`agent/`)
+# ITK-SNAP AI Agent Sidecar
 
 A high-performance, tool-calling AI agent sidecar for **ITK-SNAP**. It bridges natural language prompts from doctors and researchers to ITK-SNAP's C++ image analysis engine (`SNAPRemoteControl`) over a local WebSocket connection (`ws://127.0.0.1:8077/wsbridge`).
 
@@ -41,7 +41,7 @@ To support reasoning-oriented LLMs (like DeepSeek R1, OpenAI o1/o3-mini, and Cla
 
 ---
 
-## 🛠️ Tool Calling & dynamic RPC Schemas
+## 🛠️ Tool Calling & Dynamic RPC Schemas
 
 ### 1. Dynamic Tool Discovery
 Instead of hardcoding tool signatures in Python, the C++ client dynamically registers its entire capabilities catalog on handshake. ITK-SNAP sends a `hello` message containing **65+ dynamic tool schemas** compiled from the core application:
@@ -83,9 +83,6 @@ When ITK-SNAP starts up, it automatically checks the application directory for `
 If running independently for testing or debugging:
 
 ```powershell
-# Navigate to agent directory
-cd agent
-
 # Create and activate virtual environment
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
@@ -114,7 +111,7 @@ You can configure the model source dynamically in the Assistant Panel or via env
 ## 📁 Project Directory Layout
 
 ```text
-agent/
+.
  ├── server/
  │    ├── __main__.py       <-- Server entry point
  │    ├── app.py            <-- FastAPI server & WS route management
