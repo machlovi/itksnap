@@ -1,0 +1,52 @@
+=========================================================================
+ Wiring the Assistant dock into ITK-SNAP's main window.
+
+ Grounded in the verified master source: MainImageWindow is a QMainWindow and
+ its docks (m_DockLeft "ITK-SNAP Toolbox", m_DockRight "Segment 3D") are built
+ in C++ in the constructor of GUI/Qt/Windows/MainImageWindow.cxx. We copy the
+ m_DockRight pattern for an independent, hidden-by-default "Assistant" dock.
+ (Do NOT reuse m_RightDockStack -- it is coupled to the snake/registration
+ wizard visibility logic.)
+=========================================================================
+
+--- GUI/Qt/Windows/MainImageWindow.h
+@@ (near the existing dock members)
+     QDockWidget *m_DockLeft, *m_DockRight;
+     QStackedWidget *m_RightDockStack;
++    // Assistant (LLM chat) dock
++    QDockWidget *m_DockAssistant = nullptr;
++    class AssistantPanel *m_AssistantPanel = nullptr;
+
+--- GUI/Qt/Windows/MainImageWindow.cxx
+@@ #include section
+ #include "SnakeWizardPanel.h"
++#include "AssistantPanel.h"
+
+@@ in the constructor, immediately AFTER the existing m_DockRight setup block
+     this->addDockWidget(Qt::RightDockWidgetArea, m_DockRight);
+     m_DockRight->setVisible(false);
++
++    // --- Assistant (LLM chat) dock -------------------------------------
++    m_DockAssistant = new QDockWidget(tr("Assistant"), this);
++    m_DockAssistant->setAllowedAreas(Qt::RightDockWidgetArea | Qt::LeftDockWidgetArea);
++    m_DockAssistant->setFeatures(QDockWidget::DockWidgetFloatable |
++                                 QDockWidget::DockWidgetMovable   |
++                                 QDockWidget::DockWidgetClosable);
++    m_AssistantPanel = new AssistantPanel(m_DockAssistant);
++    m_DockAssistant->setWidget(m_AssistantPanel);
++    this->addDockWidget(Qt::RightDockWidgetArea, m_DockAssistant);
++    m_DockAssistant->setVisible(false);   // toggled from the View menu
+
+@@ in the method that receives the GlobalUIModel (e.g. SetModel / Initialize),
+@@ after the other panels get their model:
++    // hand the application model to the assistant so its tools can call GetDriver()
++    m_AssistantPanel->SetModel(this->m_Model);   // m_Model is the GlobalUIModel*
+
+@@ OPTIONAL: add a checkable View-menu action to toggle the dock. In the .ui add
+@@ an action "actionAssistantPanel", then wire it like the other docks:
++    connect(m_DockAssistant, SIGNAL(visibilityChanged(bool)),
++            ui->actionAssistantPanel, SLOT(setChecked(bool)));
++    connect(ui->actionAssistantPanel, SIGNAL(toggled(bool)),
++            m_DockAssistant, SLOT(setVisible(bool)));
++    connect(m_DockAssistant, SIGNAL(visibilityChanged(bool)),
++            this, SLOT(AdjustMarginsForDocks()));   // same handler m_DockRight uses

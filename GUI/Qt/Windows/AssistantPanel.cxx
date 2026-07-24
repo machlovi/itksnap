@@ -127,8 +127,10 @@ void AssistantPanel::ensureAgentServerRunning()
     }
   }
 
-  // 3. Relative developer path candidates
+  // 3. Relative developer path candidates in monorepo
   const QStringList candidateAgentDirs = {
+    appDir + "/agent",
+    appDir + "/../agent",
     appDir + "/itksnap-agent",
     appDir + "/../itksnap-agent"
   };

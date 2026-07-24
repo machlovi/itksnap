@@ -1,0 +1,187 @@
+S001 [d1] load the image at D:/itksnap-build/phantom.nii.gz
+S002 [d1] open the scan D:/itksnap-build/phantom.nii.gz
+S003 [d1] I want to work on the volume, load D:/itksnap-build/phantom.nii.gz
+S004 [d1] bring up the main image from D:/itksnap-build/phantom.nii.gz
+S005 [d1] open the file D:/itksnap-build/phantom.nii.gz
+S006 [d1] what's currently loaded?
+S007 [d1] give me an overview of the scene
+S008 [d1] describe the current state of the viewer
+S009 [d1] what am I looking at right now?
+S010 [d1] summarize what's in itk-snap at the moment
+S011 [d2] segment everything brighter than 200 as label 1
+S012 [d2] outline the bright nodule for me
+S013 [d3] segment the organ tissue around intensity 100 into label 2
+S014 [d3] threshold between 40 and 60 and call it background
+S015 [d3] mark all voxels with value 220 exactly as a lesion in label 3
+S016 [d2] how big is label 1?
+S017 [d2] what's the volume of the nodule in mL?
+S018 [d2] measure label 2
+S019 [d2] give me the size of the segmented organ
+S020 [d2] report the volume of structure 1
+S021 [d2] measure every label
+S022 [d2] give me all the volumes
+S023 [d2] what are the sizes of all structures?
+S024 [d2] report volumes for each segmentation
+S025 [d2] tabulate all label volumes
+S026 [d2] how many voxels are in label 1?
+S027 [d2] count the voxels of the nodule
+S028 [d2] voxel count for structure 1
+S029 [d2] how many pixels did label 1 capture?
+S030 [d2] tell me the raw voxel count of label 1
+S031 [d2] erase the whole segmentation
+S032 [d2] start the segmentation over from scratch
+S033 [d2] wipe all labels
+S034 [d2] clear everything I've segmented
+S035 [d2] reset the segmentation completely
+S036 [d3] erase label 1 only
+S037 [d3] remove the nodule segmentation but keep the organ
+S038 [d3] delete just label 1's voxels
+S039 [d3] get rid of structure 1
+S040 [d3] clear label 1
+S041 [d4] move everything in label 1 into label 2
+S042 [d4] merge label 1 into label 2
+S043 [d4] relabel structure 1 as label 2
+S044 [d4] change label 1 voxels to label 2
+S045 [d4] reassign label 1 to be label 2
+S046 [d2] make label 3 the active drawing label
+S047 [d2] switch the current label to 3
+S048 [d2] set the drawing color to label 3
+S049 [d2] I want to paint with label 3 next
+S050 [d2] activate label 3 for drawing
+S051 [d2] rename label 1 to liver
+S052 [d2] call label 1 'tumor'
+S053 [d2] change the name of label 1 to kidney
+S054 [d2] label 1 should be named spleen
+S055 [d2] give label 1 the name 'lesion'
+S056 [d2] make label 1 red
+S057 [d2] color label 1 with RGB 0 255 0
+S058 [d2] turn label 1 blue
+S059 [d2] set the color of label 1 to bright green
+S060 [d2] recolor label 1 to 255 255 0
+S061 [d2] move the crosshair to voxel 10, 20, 30
+S062 [d2] jump the cursor to 64 64 64
+S063 [d2] put the crosshair at the corner, voxel 0 0 0
+S064 [d2] navigate to position 100, 100, 90
+S065 [d2] set the cursor to the center-ish voxel 60 70 64
+S066 [d3] take me to the nodule
+S067 [d3] center the view on label 1
+S068 [d3] show me where structure 1 is
+S069 [d3] focus on label 1
+S070 [d3] jump to the middle of label 1
+S071 [d3] undo that
+S072 [d3] undo my last edit
+S073 [d3] take back the last change
+S074 [d3] revert the last segmentation edit
+S075 [d3] ctrl-z please
+S076 [d4] redo it
+S077 [d4] redo the last undone edit
+S078 [d4] bring that back
+S079 [d4] re-apply what I undid
+S080 [d4] ctrl-y
+S081 [d2] save the workspace to D:/itksnap-build/out_ws.itksnap
+S082 [d2] save my session as a workspace file at D:/itksnap-build/sess.itksnap
+S083 [d2] export the current project to D:/itksnap-build/proj.itksnap
+S084 [d2] preserve everything to a workspace D:/itksnap-build/keep.itksnap
+S085 [d2] write the itksnap workspace to D:/itksnap-build/w2.itksnap
+S086 [d2] save the statistics to D:/itksnap-build/stats1.txt
+S087 [d2] export per-label measurements to D:/itksnap-build/stats2.txt
+S088 [d2] write out the volume stats to D:/itksnap-build/stats3.txt
+S089 [d2] dump the segmentation statistics into D:/itksnap-build/stats4.txt
+S090 [d2] save a stats report at D:/itksnap-build/stats5.txt
+S091 [d2] save the label definitions to D:/itksnap-build/labels1.txt
+S092 [d2] export label names and colors to D:/itksnap-build/labels2.txt
+S093 [d2] write the label descriptions to D:/itksnap-build/labels3.txt
+S094 [d2] back up the labels to D:/itksnap-build/labels4.txt
+S095 [d2] store the label table at D:/itksnap-build/labels5.txt
+S096 [d2] save annotations to D:/itksnap-build/ann1.annot
+S097 [d2] export the rulers/landmarks to D:/itksnap-build/ann2.annot
+S098 [d2] write annotations out to D:/itksnap-build/ann3.annot
+S099 [d2] persist annotations at D:/itksnap-build/ann4.annot
+S100 [d2] store the annotation set in D:/itksnap-build/ann5.annot
+S101 [d2] close the current image
+S102 [d2] unload the main image
+S103 [d2] clear the loaded scan
+S104 [d2] close the study
+S105 [d2] remove the image from the viewer
+S106 [d1] what's at the crosshair?
+S107 [d1] which label is under the cursor?
+S108 [d1] tell me about the current cursor position
+S109 [d1] what voxel am I on?
+S110 [d1] read out the value/label at the crosshair
+S111 [d3] load an overlay from D:/x.nii.gz
+S112 [d3] add D:/o.nii.gz as an overlay
+S113 [d3] overlay the second scan D:/t2.nii.gz
+S114 [d3] put D:/pet.nii.gz on top as overlay
+S115 [d3] add an overlay image at D:/ov.nii.gz
+S116 [d3] load an existing segmentation from D:/seg.nii.gz
+S117 [d3] import the mask D:/labels.nii.gz
+S118 [d3] open a saved segmentation D:/s.nii.gz
+S119 [d3] bring in the label image D:/m.nii.gz
+S120 [d3] load segmentation file D:/seg2.nii.gz
+S121 [d3] remove all overlays
+S122 [d3] clear the overlay images
+S123 [d3] take off the overlays
+S124 [d3] get rid of every overlay
+S125 [d3] unload all overlay layers
+S126 [d3] open the workspace D:/w.itksnap
+S127 [d3] restore session from D:/s.itksnap
+S128 [d3] load project D:/p.itksnap
+S129 [d3] reopen my saved workspace D:/keep.itksnap
+S130 [d3] open itksnap workspace D:/proj.itksnap
+S131 [d3] load label descriptions from D:/labels.txt
+S132 [d3] import label names from D:/l.txt
+S133 [d3] read the label table from D:/lt.txt
+S134 [d3] restore labels from D:/labs.txt
+S135 [d3] load the label definitions file D:/ld.txt
+S136 [d3] load annotations from D:/a.annot
+S137 [d3] import rulers from D:/r.annot
+S138 [d3] open the annotation file D:/an.annot
+S139 [d3] restore landmarks from D:/lm.annot
+S140 [d3] read annotations out of D:/notes.annot
+S141 [d3] smooth label 1
+S142 [d3] clean up the jagged edges of label 1 with 2mm sigma
+S143 [d3] gaussian-smooth the nodule segmentation
+S144 [d3] reduce the staircase artifacts on label 1
+S145 [d3] smooth structure 1 boundaries
+S146 [d3] interpolate the labels across slices
+S147 [d3] fill the gaps between the slices I drew
+S148 [d3] interpolate label 1 between slices
+S149 [d3] connect my sparse slice drawings
+S150 [d3] run slice interpolation on the segmentation
+S151 [d3] export the current axial slice to D:/slice.png
+S152 [d3] save the coronal view to D:/c.png
+S153 [d3] write the sagittal slice to D:/s.png
+S154 [d3] screenshot the axial slice at D:/ax.png
+S155 [d3] export the slice image to D:/out.png
+S156 [d3] switch to axial-only view
+S157 [d3] show me all four panels
+S158 [d3] go to 3D-only layout
+S159 [d3] coronal view please
+S160 [d3] single sagittal pane
+S161 [d3] rebuild the 3d mesh
+S162 [d3] update the 3D surface
+S163 [d3] regenerate the 3d model
+S164 [d3] refresh the 3D rendering of the segmentation
+S165 [d3] make the 3D mesh from the labels
+S166 [d5] segment the bright nodule as label 1 and then measure it
+S167 [d5] segment everything above 200 as label 1, then tell me how many voxels it has
+S168 [d6] outline the nodule and center the view on it
+S169 [d7] segment the organ (around 100) as label 2 and the nodule (above 200) as label 1, then compare their volumes
+S170 [d8] clear the whole segmentation, then re-segment the nodule above 210 into label 1 and measure it
+S171 [d9] segment the nodule as label 1, save the workspace to D:/itksnap-build/comp1.itksnap, and save the stats to D:/itksnap-build/comp1_stats.txt
+S172 [d8] segment the nodule into label 1, rename it to lesion, color it red, then report its volume
+S173 [d7] segment above 200 as label 1, then undo it so nothing is segmented
+S174 [d8] do a full workup on the bright lesion: segment it, measure it, and take me to it
+S175 [d7] segment the organ as label 2, then erase just that label leaving everything else
+S176 [d9] segment the nodule as label 1 and the organ as label 2, then merge label 1 into label 2 and measure the result
+S177 [d8] segment everything above 200, move the cursor to voxel 5 5 5, then focus back on the segmentation
+S178 [d10] give me a complete report: segment organ and nodule, measure all labels, and export the statistics to D:/itksnap-build/report_all.txt
+S179 [d9] segment the nodule, save the labels to D:/itksnap-build/comp_labels.txt and the workspace to D:/itksnap-build/comp_ws.itksnap
+S180 [d8] segment the nodule as label 1, then segment the organ as label 2, then clear the whole thing and confirm it's empty
+S181 [d9] prepare a clean lesion analysis end to end and persist it to D:/itksnap-build/lesion_final.itksnap
+S182 [d10] I need the nodule isolated, quantified in mL, centered in view, and its stats written to D:/itksnap-build/nodule_stats.txt
+S183 [d10] segment both structures, rename label 1 to lesion and label 2 to organ, then export all volumes to D:/itksnap-build/named_stats.txt
+S184 [d9] reset everything, segment only the exact nodule voxels (value 220) into label 1, verify by measuring it
+S185 [d4] rotate the 3d model 90 degrees
+S186 [d5] apply a deep learning kidney segmentation model
+S187 [d5] register this scan to an atlas

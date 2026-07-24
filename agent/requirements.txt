@@ -1,0 +1,12 @@
+# Core MVP dependencies (all install cleanly on Windows via pip)
+fastapi>=0.110
+uvicorn[standard]>=0.27
+SimpleITK>=2.3
+numpy>=1.24
+pillow>=10.0
+httpx>=0.26
+
+# Optional real LLM backends (uncomment / pip install as needed):
+#   pip install anthropic     # for AGENT_LLM=anthropic
+#   pip install openai        # for AGENT_LLM=openai
+# Ollama needs no python package (called over HTTP at OLLAMA_URL)

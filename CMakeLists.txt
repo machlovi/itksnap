@@ -1945,7 +1945,9 @@ OPTION(SNAP_ENABLE_ASSISTANT "Enable AI Assistant integration and sidecar agent 
 IF(SNAP_ENABLE_ASSISTANT)
   SET(ITKSNAP_AGENT_EXE "" CACHE FILEPATH "Path to pre-built itksnap-agent.exe standalone executable")
 
-  IF(NOT ITKSNAP_AGENT_EXE AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../itksnap-agent/dist/itksnap-agent.exe")
+  IF(NOT ITKSNAP_AGENT_EXE AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/agent/dist/itksnap-agent.exe")
+    SET(ITKSNAP_AGENT_EXE "${CMAKE_CURRENT_SOURCE_DIR}/agent/dist/itksnap-agent.exe")
+  ELSEIF(NOT ITKSNAP_AGENT_EXE AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../itksnap-agent/dist/itksnap-agent.exe")
     SET(ITKSNAP_AGENT_EXE "${CMAKE_CURRENT_SOURCE_DIR}/../itksnap-agent/dist/itksnap-agent.exe")
   ENDIF()
 

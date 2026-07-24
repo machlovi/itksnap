@@ -1,0 +1,39 @@
+=========================================================================
+ CMake changes to build the Assistant panel.
+
+ Only ONE new Qt module is required: Qt6::WebSockets (small; ships with Qt6).
+ NO QtWebEngine, NO QtWebChannel -- the chat UI is native Qt Widgets and the
+ LLM lives in the external itksnap-agent sidecar.
+=========================================================================
+
+--- CMake/standalone.cmake   (where the Qt6 components are found)
+@@ near FIND_PACKAGE(Qt6Widgets ...), Qt6OpenGL, Qt6Concurrent, Qt6Qml
+   FIND_PACKAGE(Qt6Widgets    REQUIRED)
+   FIND_PACKAGE(Qt6OpenGL     REQUIRED)
++  FIND_PACKAGE(Qt6WebSockets REQUIRED)
+@@ where SNAP_QT_LIBRARIES is assembled (the var that flows into the GUI link)
+   SET(SNAP_QT_LIBRARIES
+       Qt6::Widgets Qt6::OpenGL Qt6::Concurrent Qt6::Qml
++      Qt6::WebSockets
+       ${OTHER_QT_LIBS})
+
+--- CMakeLists.txt   (root; where the itksnapui_qt source list lives, ~line 1234)
+@@ in the source list for the Qt GUI library (itksnapui_qt)
+   SET(SNAP_QT_UI_CXX
+       GUI/Qt/Windows/MainImageWindow.cxx
+       ...
++      GUI/Qt/Windows/AssistantPanel.cxx
+   )
+   SET(SNAP_QT_UI_H
+       GUI/Qt/Windows/MainImageWindow.h
+       ...
++      GUI/Qt/Windows/AssistantPanel.h      # has Q_OBJECT -> needs moc (QT6_WRAP_CPP)
+   )
+
+ Notes:
+  * AssistantPanel.h uses Q_OBJECT, so it must go through moc. If the build
+    lists headers explicitly for QT6_WRAP_CPP, add it there; if it uses
+    CMAKE_AUTOMOC, just adding the .cxx/.h to the target is enough.
+  * Copy AssistantPanel.h / AssistantPanel.cxx into GUI/Qt/Windows/.
+  * On Windows, windeployqt will now also bundle Qt6WebSockets.dll (a few
+    hundred KB) -- nothing like the ~120-150 MB QtWebEngine footprint.

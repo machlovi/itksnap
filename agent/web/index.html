@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ITK-SNAP Assistant (MVP)</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <div class="app">
+    <!-- Chat panel (this is what later lives inside ITK-SNAP's dock) -->
+    <section class="chat">
+      <header class="chat-head">
+        <div class="title">ITK-SNAP Assistant</div>
+        <div class="head-right">
+          <div class="badge" id="backend">llm: …</div>
+          <button class="gear" id="gear" title="LLM endpoint">⚙</button>
+        </div>
+      </header>
+
+      <!-- Runtime LLM endpoint: point at your cluster model via a localhost tunnel -->
+      <div class="settings" id="settings" hidden>
+        <div class="row">
+          <label>Backend</label>
+          <select id="s_backend">
+            <option value="mock">mock (offline)</option>
+            <option value="openai">OpenAI-compatible (cluster / vLLM / TGI / llama.cpp)</option>
+          </select>
+        </div>
+        <div class="row"><label>Base URL</label>
+          <input id="s_base" placeholder="http://localhost:8000/v1" /></div>
+        <div class="row"><label>Model</label>
+          <input id="s_model" placeholder="e.g. Qwen2.5-7B-Instruct" /></div>
+        <div class="row"><label>API key</label>
+          <input id="s_key" type="password" placeholder="(optional)" /></div>
+        <div class="row actions">
+          <button id="s_apply">Apply</button>
+          <button id="s_ping" class="ghost">Test /models</button>
+          <span id="s_status"></span>
+        </div>
+      </div>
+
+      <div class="messages" id="messages"></div>
+      <form class="composer" id="composer">
+        <input id="input" autocomplete="off" placeholder="e.g. load demo, then segment the bright nodule" />
+        <button type="submit" id="send">Send</button>
+      </form>
+      <div class="hints">
+        Try: <button class="chip" data-msg="load demo">load demo</button>
+        <button class="chip" data-msg="segment the bright nodule">segment the bright nodule</button>
+        <button class="chip" data-msg="what is its volume?">volume?</button>
+        <button class="chip" data-msg="show a coronal slice">coronal</button>
+      </div>
+    </section>
+
+    <!-- Live viewer: stand-in for ITK-SNAP's 2D/3D views -->
+    <section class="viewer">
+      <header class="viewer-head">
+        <span>Viewer</span>
+        <div class="axes" id="axes">
+          <button data-axis="axial" class="on">Axial</button>
+          <button data-axis="coronal">Coronal</button>
+          <button data-axis="sagittal">Sagittal</button>
+        </div>
+      </header>
+      <div class="canvas" id="canvas">
+        <div class="placeholder" id="placeholder">No image loaded.<br/>Say “load demo” to begin.</div>
+        <img id="slice" alt="" hidden />
+      </div>
+      <div class="scrub">
+        <input type="range" id="slider" min="0" max="0" value="0" disabled />
+        <span id="sliceLabel">–</span>
+      </div>
+    </section>
+  </div>
+  <script src="/static/app.js"></script>
+</body>
+</html>
