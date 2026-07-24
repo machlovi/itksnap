@@ -107,6 +107,16 @@ private:
   QString toolFillHolesLabel(const QJsonObject &args, bool &ok);
   QString toolGetLayerList(const QJsonObject &args, bool &ok);
 
+  // --- deep audit batch: 8 critical missing tools ---
+  QString toolSaveSegmentation(const QJsonObject &args, bool &ok);
+  QString toolSetToolbarMode(const QJsonObject &args, bool &ok);
+  QString toolSetPaintbrushSize(const QJsonObject &args, bool &ok);
+  QString toolGetImageHeader(const QJsonObject &args, bool &ok);
+  QString toolAddBlankSegmentation(const QJsonObject &args, bool &ok);
+  QString toolSetDrawOverLabel(const QJsonObject &args, bool &ok);
+  QString toolSaveSegmentationAs(const QJsonObject &args, bool &ok);
+  QString toolGetRAIOrientation(const QJsonObject &args, bool &ok);
+
   GlobalUIModel *m_Model = nullptr;
 };
 

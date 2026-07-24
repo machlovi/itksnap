@@ -16,7 +16,7 @@ The agent is designed following industry-standard LLM agent design patterns (Ope
  │   │   (Qt WebSocket UI)   │──────────────►│    (C++ RPC Command Engine) │   │
  │   └───────────┬───────────┘               └──────────────┬──────────────┘   │
  └───────────────┼──────────────────────────────────────────┼──────────────────┘
-                 │ WebSocket (`ws://127.0.0.1:8077`)        │ ~35 Tool Executions
+                 │ WebSocket (`ws://127.0.0.1:8077`)        │ 65+ Tool Executions
                  ▼                                          ▼
  ┌───────────────────────────────┐           ┌─────────────────────────────┐
  │       itksnap-agent           │           │       IRISApplication       │
@@ -32,10 +32,15 @@ The agent is designed following industry-standard LLM agent design patterns (Ope
 
 ---
 
+## 🧠 Real-Time Reasoning & Thought Streaming
+The agent extracts reasoning steps (`reasoning_content` or `thinking_delta`) from advanced LLMs (such as DeepSeek R1 or Anthropic Claude) and streams them in real-time. In the ITK-SNAP GUI, these show up inside a beautifully formatted **🧠 Model Reasoning** panel before the final answer or tool calls.
+
+---
+
 ## 🛠️ Tool Calling & Skill System (LLM Best Practices)
 
 ### 1. Dynamic Tool Registration (`SNAPRemoteControl`)
-Tool schemas are **not hardcoded in Python**. When ITK-SNAP connects to the agent server, it registers its complete suite of **~35 C++ tool schemas** dynamically via a JSON-RPC `hello` message:
+Tool schemas are **not hardcoded in Python**. When ITK-SNAP connects to the agent server, it registers its complete suite of **65+ C++ tool schemas** dynamically via a JSON-RPC `hello` message:
 
 ```json
 {
@@ -128,6 +133,7 @@ agent/
  │    └── skills.py         <-- Progressive disclosure skill engine
  ├── web/                   <-- Standalone Web UI (HTML/JS/CSS)
  ├── eval/                  <-- Ground-truth evaluation harness & test suites
+ ├── test.md                <-- 10 Advanced Knee MRI clinical test tasks
  ├── requirements.txt       <-- Python package dependencies
  └── README.md              <-- Agent documentation
 ```

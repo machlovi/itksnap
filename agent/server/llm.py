@@ -277,6 +277,10 @@ class AnthropicBackend:
                         text_out.append(t)
                         if on_text:
                             on_text(t)
+                    elif delta.get("type") == "thinking_delta" or "thinking" in delta:
+                        t = delta.get("thinking", "")
+                        if on_thinking and t:
+                            on_thinking(t)
                     elif delta.get("type") == "input_json_delta":
                         if current_tool:
                             current_tool["json_buf"] += delta.get("partial_json", "")

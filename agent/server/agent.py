@@ -66,6 +66,86 @@ def _extract_chunk_text(content: Any) -> str:
     return str(content or "")
 
 
+class _ReasoningSplitter:
+    """Incrementally split a streamed token flow into reasoning vs. answer.
+
+    Text inside <think>...</think> (or <thinking>...</thinking>) is the model's
+    reasoning and is emitted as ('thought', ...); everything else is the answer,
+    emitted as ('token', ...). Tolerant of tags that arrive split across chunks:
+    a partial tag at the end of a delta is held back until the next delta.
+
+    Many local reasoning models (qwen, deepseek-r1 via llama.cpp, etc.) stream
+    their chain-of-thought inline this way rather than in a separate field.
+    """
+    _OPEN = ("<think>", "<thinking>")
+    _CLOSE = ("</think>", "</thinking>")
+
+    def __init__(self):
+        self._buf = ""
+        self._in_think = False
+
+    @staticmethod
+    def _earliest(buf, tags):
+        best, best_tag = -1, ""
+        for tag in tags:
+            i = buf.find(tag)
+            if i != -1 and (best == -1 or i < best):
+                best, best_tag = i, tag
+        return best, best_tag
+
+    @staticmethod
+    def _partial_tail(buf, tags):
+        """Longest tail of buf that is a proper prefix of some tag (an incomplete tag)."""
+        longest = 0
+        for tag in tags:
+            k = min(len(tag) - 1, len(buf))
+            while k > 0:
+                if buf[-k:] == tag[:k]:
+                    longest = max(longest, k)
+                    break
+                k -= 1
+        return longest
+
+    def feed(self, text):
+        """Consume a streamed delta; return a list of ('token'|'thought', segment)."""
+        self._buf += text
+        out = []
+        while self._buf:
+            if not self._in_think:
+                idx, tag = self._earliest(self._buf, self._OPEN)
+                if idx == -1:
+                    hold = self._partial_tail(self._buf, self._OPEN)
+                    if len(self._buf) > hold:
+                        out.append(("token", self._buf[:len(self._buf) - hold]))
+                        self._buf = self._buf[len(self._buf) - hold:]
+                    break
+                if idx > 0:
+                    out.append(("token", self._buf[:idx]))
+                self._buf = self._buf[idx + len(tag):]
+                self._in_think = True
+            else:
+                idx, tag = self._earliest(self._buf, self._CLOSE)
+                if idx == -1:
+                    hold = self._partial_tail(self._buf, self._CLOSE)
+                    if len(self._buf) > hold:
+                        out.append(("thought", self._buf[:len(self._buf) - hold]))
+                        self._buf = self._buf[len(self._buf) - hold:]
+                    break
+                if idx > 0:
+                    out.append(("thought", self._buf[:idx]))
+                self._buf = self._buf[idx + len(tag):]
+                self._in_think = False
+        return out
+
+    def flush(self):
+        """Emit anything still buffered at end of stream."""
+        out = []
+        if self._buf:
+            out.append(("thought" if self._in_think else "token", self._buf))
+            self._buf = ""
+        return out
+
+
 # ----------------------------------------------------------------------
 # LangChain Model Factory
 # ----------------------------------------------------------------------
@@ -175,6 +255,19 @@ class LangChainDeepAgent:
         await emit({"type": "status", "text": "thinking…"})
 
         accumulated_text = ""
+        splitter = _ReasoningSplitter()
+
+        async def _emit_segment(seg_kind, seg):
+            """Route a split segment: answer text streams as 'token' (and is kept
+            for the final assistant message); reasoning streams as 'thought'."""
+            nonlocal accumulated_text
+            if not seg:
+                return
+            if seg_kind == "token":
+                accumulated_text += seg
+                await emit({"type": "token", "text": seg})
+            else:
+                await emit({"type": "thought", "text": seg})
 
         # Stream graph execution events live to WebSocket UI
         async for event in graph.astream_events({"messages": [("user", user_text)]}, thread_config, version="v2"):
@@ -184,10 +277,28 @@ class LangChainDeepAgent:
                 raw_content = getattr(chunk, "content", "")
                 delta = _extract_chunk_text(raw_content)
                 if delta:
-                    accumulated_text += delta
-                    await emit({"type": "token", "text": delta})
+                    # Split inline <think>...</think> reasoning out of the answer stream.
+                    for seg_kind, seg in splitter.feed(delta):
+                        await _emit_segment(seg_kind, seg)
 
-        # Reliable assistant emit for C++ AssistantPanel rendering
+                # Some reasoning models (DeepSeek-R1 style) expose reasoning in a
+                # separate field instead of inline tags — surface that too.
+                additional = getattr(chunk, "additional_kwargs", {}) or {}
+                thought = (
+                    additional.get("reasoning_content") or
+                    additional.get("reasoning") or
+                    getattr(chunk, "reasoning_content", None) or
+                    None
+                )
+                if thought:
+                    await emit({"type": "thought", "text": thought})
+
+        # Flush any tail still buffered in the splitter at end of stream.
+        for seg_kind, seg in splitter.flush():
+            await _emit_segment(seg_kind, seg)
+
+        # Reliable assistant emit for the C++ AssistantPanel (answer only — the
+        # accumulated text excludes reasoning, which went out as 'thought').
         if accumulated_text.strip():
             await emit({"type": "assistant", "text": accumulated_text.strip()})
 
@@ -239,8 +350,10 @@ class Agent:
             
             def cb(delta):
                 asyncio.run_coroutine_threadsafe(emit({"type": "token", "text": delta}), loop)
+            def cb_think(delta):
+                asyncio.run_coroutine_threadsafe(emit({"type": "thought", "text": delta}), loop)
 
-            res = await asyncio.to_thread(backend.run_turn, system_prompt, history, tools, cb)
+            res = await asyncio.to_thread(backend.run_turn, system_prompt, history, tools, cb, cb_think)
             history.append({"role": "assistant", "content": res.assistant_content})
 
             # Surface text to C++ panel

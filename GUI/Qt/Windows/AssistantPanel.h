@@ -59,6 +59,7 @@ private:
   // chat rendering
   void appendChat(const QString &who, const QString &text);
   void appendToolLine(const QString &name, const QJsonObject &args);
+  void closeStreamBlock();
 
   GlobalUIModel     *m_Model = nullptr;
   SNAPRemoteControl  m_RemoteControl;
@@ -75,6 +76,13 @@ private:
   QPushButton   *m_StopBtn      = nullptr;
   QPushButton   *m_Reconnect    = nullptr;
   QTimer        *m_RetryTimer   = nullptr;
+
+  enum StreamState {
+    STATE_IDLE,
+    STATE_THINKING,
+    STATE_OUTPUT
+  };
+  StreamState m_StreamState = STATE_IDLE;
 
   QString m_ServerUrl = "ws://127.0.0.1:8077/wsbridge/itksnap";
   QString m_StreamBuffer;

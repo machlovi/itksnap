@@ -45,6 +45,13 @@ started with it.
 *   There are also materials (images, exercises, video) from training courses
     available on the [documentation page](http://www.itksnap.org/pmwiki/pmwiki.php?n=Documentation.SNAP3). 
 
+### AI Agent Integration (Dynamic Tool RPC)
+This version features a built-in, stateful AI Agent sidecar that allows clinicians and researchers to operate ITK-SNAP via natural language:
+*   **Sidecar Server**: Code and documentation are located in [agent/](file:///D:/itksnap-build/itksnap/agent/).
+*   **65+ Dynamic Tools**: Dynamically registers C++ control methods to expose full image manipulation capabilities (active contours, thresholding, windowing, spacing, metrics, coregistration).
+*   **Real-Time Reasoning**: Streams reasoning steps (e.g., from DeepSeek R1 or Anthropic Claude) inside a dedicated visual panel.
+*   **Advanced Clinical Evaluation**: 10 advanced test tasks for Knee MRI scans are described in [agent/test.md](file:///D:/itksnap-build/itksnap/agent/test.md).
+
 ### Asking Questions
 
 If you have a question about ITK-SNAP, here are the places where you may find an answer. Keep in mind that since ITK-SNAP in not a commercial product, it may take some time for an answer to arrive.

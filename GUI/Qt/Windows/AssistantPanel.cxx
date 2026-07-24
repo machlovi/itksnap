@@ -24,6 +24,7 @@
 #include <QProcess>
 #include <QFileInfo>
 #include <QCoreApplication>
+#include <QTextCursor>
 
 #include "GlobalUIModel.h"
 
@@ -316,30 +317,61 @@ void AssistantPanel::onTextMessageReceived(const QString &message)
   QJsonObject e = QJsonDocument::fromJson(message.toUtf8()).object();
   const QString type = e["type"].toString();
 
-  if(type == "token")
+  if(type == "thought")
     {
-    m_StreamBuffer += e["text"].toString();
+    QString txt = e["text"].toString();
+    if(!txt.isEmpty())
+      {
+      m_Transcript->moveCursor(QTextCursor::End);
+      if(m_StreamState != STATE_THINKING)
+        {
+        closeStreamBlock();
+        m_Transcript->insertHtml("<br/><div style='background-color:#f5f5fa; border-left:3px solid #7030a0; padding:6px; margin:4px 0;'><b style='color:#7030a0;'>🧠 Model Reasoning:</b><br/><span style='color:#555555; font-style:italic;'>");
+        m_StreamState = STATE_THINKING;
+        }
+      m_Transcript->textCursor().insertText(txt);
+      }
+    }
+  else if(type == "token")
+    {
+    QString txt = e["text"].toString();
+    if(!txt.isEmpty())
+      {
+      m_Transcript->moveCursor(QTextCursor::End);
+      if(m_StreamState == STATE_THINKING)
+        {
+        closeStreamBlock();
+        }
+      if(m_StreamState != STATE_OUTPUT)
+        {
+        m_Transcript->insertHtml("<br/><b style='color:#0a7d5a'>assistant:</b> ");
+        m_StreamState = STATE_OUTPUT;
+        }
+      m_Transcript->textCursor().insertText(txt);
+      }
     }
   else if(type == "assistant")
     {
-    m_StreamBuffer.clear();
-    appendChat("assistant", e["text"].toString());
+    closeStreamBlock();
     m_Send->setEnabled(true);
     m_StopBtn->setEnabled(false);
     }
   else if(type == "tool_call")
     {
+    closeStreamBlock();
     appendToolLine(e["name"].toString(), e["args"].toObject());
     dispatchToolCall(e["id"].toString(), e["name"].toString(), e["args"].toObject());
     }
   else if(type == "error")
     {
+    closeStreamBlock();
     appendChat("error", e["text"].toString());
     m_Send->setEnabled(true);
     m_StopBtn->setEnabled(false);
     }
   else if(type == "turn_end")
     {
+    closeStreamBlock();
     m_Send->setEnabled(true);
     m_StopBtn->setEnabled(false);
     }
@@ -360,6 +392,8 @@ void AssistantPanel::onSendClicked()
   m_Input->clear();
   m_Send->setEnabled(false);
   m_StopBtn->setEnabled(true);
+
+  m_StreamState = STATE_IDLE;
 
   QJsonObject msg;
   msg["type"] = "user";
@@ -409,4 +443,14 @@ void AssistantPanel::appendToolLine(const QString &name, const QJsonObject &args
     .arg(name.toHtmlEscaped(),
          QString::fromUtf8(QJsonDocument(args).toJson(QJsonDocument::Compact))
            .toHtmlEscaped()));
+}
+
+void AssistantPanel::closeStreamBlock()
+{
+  if(m_StreamState == STATE_THINKING)
+    {
+    m_Transcript->moveCursor(QTextCursor::End);
+    m_Transcript->insertHtml("</span></div><br/>");
+    }
+  m_StreamState = STATE_IDLE;
 }

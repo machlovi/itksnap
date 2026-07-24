@@ -40,6 +40,7 @@
 #include "GuidedMeshIO.h"
 #include "PropertyModel.h"
 #include "ImageCoordinateGeometry.h"
+#include "PaintbrushSettingsModel.h"
 #include "itkImageRegionConstIterator.h"
 #include "itkImageRegionConstIteratorWithIndex.h"
 
@@ -288,6 +289,24 @@ QJsonArray SNAPRemoteControl::GetSupportedCommandSchemas() const
 
   addTool("get_layer_list", "Get structured list of all loaded image layers (Main image, overlays, labels) with file paths and metadata.", none);
 
+  // ---- deep audit batch: 8 critical missing tools ----
+  addTool("save_segmentation", "Save the current segmentation (label image) to its existing file on disk.", none);
+  { QJsonObject p; p["path"]=strObj("Absolute output path for segmentation file (.nii.gz, .nii, .mha).");
+    addTool("save_segmentation_as", "Save the current segmentation to a specified file path on disk.", p, QJsonArray{"path"}); }
+  { QJsonObject p; QJsonObject md; md["type"]="string";
+    md["enum"]=QJsonArray{"crosshairs","navigation","polygon","paintbrush","roi","annotation","registration"};
+    md["description"]="Toolbar mode name."; p["mode"]=md;
+    addTool("set_toolbar_mode", "Switch the active 2D toolbar mode (crosshairs, paintbrush, polygon, annotation, ROI, navigation, registration).", p, QJsonArray{"mode"}); }
+  { QJsonObject p; p["size"]=intObj("Brush diameter in voxels (1-50).");
+    addTool("set_paintbrush_size", "Set the paintbrush tool radius/diameter in voxels.", p, QJsonArray{"size"}); }
+  addTool("get_image_header", "Get detailed image header: dimensions, voxel spacing (mm), origin, and anatomical orientation RAI code.", none);
+  addTool("add_blank_segmentation", "Create a new empty segmentation layer (for multi-structure workflows).", none);
+  { QJsonObject p; QJsonObject md; md["type"]="string";
+    md["enum"]=QJsonArray{"all","clear","active"};
+    md["description"]="Draw-over filter: 'all' paints over everything, 'clear' only over label 0 (unlabeled), 'active' only over the active label."; p["filter"]=md;
+    addTool("set_draw_over_label", "Set the draw-over filter that controls which existing labels can be painted over.", p, QJsonArray{"filter"}); }
+  addTool("get_rai_orientation", "Get the 3-letter RAI anatomical orientation code (e.g. LPI, RAS) of the loaded image.", none);
+
   return tools;
 }
 
@@ -354,6 +373,14 @@ QJsonObject SNAPRemoteControl::ExecuteCommand(const QString &commandName, const 
     else if(name == "get_intensity_histogram") result = toolGetIntensityHistogram(args, ok);
     else if(name == "fill_holes_label")        result = toolFillHolesLabel(args, ok);
     else if(name == "get_layer_list")          result = toolGetLayerList(args, ok);
+    else if(name == "save_segmentation")        result = toolSaveSegmentation(args, ok);
+    else if(name == "save_segmentation_as")     result = toolSaveSegmentationAs(args, ok);
+    else if(name == "set_toolbar_mode")         result = toolSetToolbarMode(args, ok);
+    else if(name == "set_paintbrush_size")      result = toolSetPaintbrushSize(args, ok);
+    else if(name == "get_image_header")         result = toolGetImageHeader(args, ok);
+    else if(name == "add_blank_segmentation")   result = toolAddBlankSegmentation(args, ok);
+    else if(name == "set_draw_over_label")      result = toolSetDrawOverLabel(args, ok);
+    else if(name == "get_rai_orientation")      result = toolGetRAIOrientation(args, ok);
     else { ok = false; result = QString("Unknown RPC command '%1'.").arg(name); }
   }
   catch(IRISException &exc)
@@ -1371,4 +1398,154 @@ QString SNAPRemoteControl::toolImportMesh(const QJsonObject &args, bool &ok)
   d->InvokeEvent(SegmentationChangeEvent());
   ok = true;
   return QString("Imported mesh from %1.").arg(path);
+}
+
+// =====================================================================
+// Deep audit batch: 8 critical missing tools
+// =====================================================================
+
+QString SNAPRemoteControl::toolSaveSegmentation(const QJsonObject &, bool &ok)
+{
+  IRISApplication *d = m_Model ? m_Model->GetDriver() : nullptr;
+  if(!d || !d->IsMainImageLoaded())
+    { ok = false; return "No main image loaded."; }
+
+  LabelImageWrapper *seg = d->GetSelectedSegmentationLayer();
+  if(!seg) { ok = false; return "No segmentation layer available."; }
+
+  const char *fname = seg->GetFileName();
+  if(!fname || strlen(fname) == 0)
+    { ok = false; return "Segmentation has no filename. Use save_segmentation_as with a path."; }
+
+  SmartPtr<AbstractSaveImageDelegate> del = d->CreateSaveDelegateForLayer(seg, LABEL_ROLE);
+  IRISWarningList wl;
+  Registry reg;
+  del->SaveImage(fname, nullptr, reg, wl);
+  ok = true;
+  return QString("Saved segmentation to '%1'.").arg(fname);
+}
+
+QString SNAPRemoteControl::toolSaveSegmentationAs(const QJsonObject &args, bool &ok)
+{
+  IRISApplication *d = m_Model ? m_Model->GetDriver() : nullptr;
+  if(!d || !d->IsMainImageLoaded())
+    { ok = false; return "No main image loaded."; }
+
+  LabelImageWrapper *seg = d->GetSelectedSegmentationLayer();
+  if(!seg) { ok = false; return "No segmentation layer available."; }
+
+  const QString path = args["path"].toString();
+  if(path.isEmpty()) { ok = false; return "Path parameter is required."; }
+
+  SmartPtr<AbstractSaveImageDelegate> del = d->CreateSaveDelegateForLayer(seg, LABEL_ROLE);
+  IRISWarningList wl;
+  Registry reg;
+  del->SaveImage(path.toUtf8().constData(), nullptr, reg, wl);
+  ok = true;
+  return QString("Saved segmentation to '%1'.").arg(path);
+}
+
+QString SNAPRemoteControl::toolSetToolbarMode(const QJsonObject &args, bool &ok)
+{
+  if(!m_Model || !m_Model->GetDriver())
+    { ok = false; return "No model available."; }
+
+  const QString mode = args["mode"].toString().toLower();
+  ToolbarModeType tm;
+  if(mode == "crosshairs")         tm = CROSSHAIRS_MODE;
+  else if(mode == "navigation")    tm = NAVIGATION_MODE;
+  else if(mode == "polygon")       tm = POLYGON_DRAWING_MODE;
+  else if(mode == "paintbrush")    tm = PAINTBRUSH_MODE;
+  else if(mode == "roi")           tm = ROI_MODE;
+  else if(mode == "annotation")    tm = ANNOTATION_MODE;
+  else if(mode == "registration")  tm = REGISTRATION_MODE;
+  else { ok = false; return QString("Unknown toolbar mode '%1'. Valid: crosshairs, navigation, polygon, paintbrush, roi, annotation, registration.").arg(mode); }
+
+  m_Model->GetGlobalState()->SetToolbarMode(tm);
+  ok = true;
+  return QString("Switched toolbar mode to '%1'.").arg(mode);
+}
+
+QString SNAPRemoteControl::toolSetPaintbrushSize(const QJsonObject &args, bool &ok)
+{
+  if(!m_Model)
+    { ok = false; return "No model available."; }
+
+  const int sz = args["size"].toInt();
+  if(sz < 1 || sz > 50)
+    { ok = false; return QString("Brush size %1 out of range (1-50).").arg(sz); }
+
+  PaintbrushSettingsModel *pbm = m_Model->GetPaintbrushSettingsModel();
+  pbm->GetBrushSizeModel()->SetValue(sz);
+  ok = true;
+  return QString("Set paintbrush size to %1 voxels.").arg(sz);
+}
+
+QString SNAPRemoteControl::toolGetImageHeader(const QJsonObject &, bool &ok)
+{
+  IRISApplication *d = m_Model ? m_Model->GetDriver() : nullptr;
+  if(!d || !d->IsMainImageLoaded())
+    { ok = false; return "No main image loaded."; }
+
+  Vector3ui sz = d->GetCurrentImageData()->GetVolumeExtents();
+  Vector3d sp = d->GetCurrentImageData()->GetImageSpacing();
+  Vector3d orig = d->GetCurrentImageData()->GetImageOrigin();
+  std::string rai = d->GetImageToAnatomyRAI();
+
+  ok = true;
+  return QString("Dimensions: %1 x %2 x %3 voxels. "
+                 "Spacing: %4 x %5 x %6 mm. "
+                 "Origin: (%7, %8, %9) mm. "
+                 "Orientation RAI: %10.")
+           .arg(sz[0]).arg(sz[1]).arg(sz[2])
+           .arg(sp[0], 0, 'f', 4).arg(sp[1], 0, 'f', 4).arg(sp[2], 0, 'f', 4)
+           .arg(orig[0], 0, 'f', 2).arg(orig[1], 0, 'f', 2).arg(orig[2], 0, 'f', 2)
+           .arg(QString::fromStdString(rai));
+}
+
+QString SNAPRemoteControl::toolAddBlankSegmentation(const QJsonObject &, bool &ok)
+{
+  IRISApplication *d = m_Model ? m_Model->GetDriver() : nullptr;
+  if(!d || !d->IsMainImageLoaded())
+    { ok = false; return "No main image loaded."; }
+
+  d->AddBlankSegmentation();
+  ok = true;
+  return "Created a new blank segmentation layer.";
+}
+
+QString SNAPRemoteControl::toolSetDrawOverLabel(const QJsonObject &args, bool &ok)
+{
+  if(!m_Model || !m_Model->GetDriver())
+    { ok = false; return "No model available."; }
+
+  const QString filter = args["filter"].toString().toLower();
+  DrawOverFilter dof;
+  if(filter == "all") {
+    dof.CoverageMode = PAINT_OVER_ALL;
+  } else if(filter == "clear") {
+    dof.CoverageMode = PAINT_OVER_ONE;
+    dof.DrawOverLabel = 0;
+  } else if(filter == "active") {
+    dof.CoverageMode = PAINT_OVER_ONE;
+    dof.DrawOverLabel = m_Model->GetGlobalState()->GetDrawingColorLabel();
+  } else {
+    ok = false;
+    return QString("Unknown draw-over filter '%1'. Valid: all, clear, active.").arg(filter);
+  }
+
+  m_Model->GetGlobalState()->SetDrawOverFilter(dof);
+  ok = true;
+  return QString("Set draw-over filter to '%1'.").arg(filter);
+}
+
+QString SNAPRemoteControl::toolGetRAIOrientation(const QJsonObject &, bool &ok)
+{
+  IRISApplication *d = m_Model ? m_Model->GetDriver() : nullptr;
+  if(!d || !d->IsMainImageLoaded())
+    { ok = false; return "No main image loaded."; }
+
+  std::string rai = d->GetImageToAnatomyRAI();
+  ok = true;
+  return QString("Image anatomical orientation: %1.").arg(QString::fromStdString(rai));
 }
