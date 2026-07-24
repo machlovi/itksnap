@@ -2,12 +2,13 @@
 .*.sw?
 *~
 
-# MACOS files
+# OS files
 .DS_Store*
 Thumbs.db
 
-# Backup files
+# Backup & logs
 *.bak
+*.log
 
 # Qt Creator stuff
 CMakeLists.txt.user*
@@ -19,20 +20,43 @@ CTestConfig.cmake.user*
 # Notebook stuff
 .ipynb_checkpoints
 
-# Build directories
-build/
+# Python & virtual environments
+__pycache__/
+*.pyc
+.venv/
+agent/.venv/
 
-# Local Claude Code instructions (not for sharing)
-CLAUDE.local.md
+# Build and distribution directories
+build/
+dist/
+whl/
+*.whl
+*.spec
 
 # clangd cache
 .cache/
 
+# Local Claude Code instructions (not for sharing)
+CLAUDE.local.md
+
 # ITK-SNAP dynamic / session files
 *.tsi
 
-# Python wheel builds and folders
-whl/
-*.whl
+# Medical image files (CT/MRI/Segmentations)
+*.nii
+*.nii.gz
+*.mha
+*.mhd
+*.raw
+*.nhdr
+*.nrrd
 
+# ITK-SNAP local workspace files & annotations
+*.itksnap
+*.txt
+*.xml
 
+# AI Agent evaluation outputs
+agent/eval/
+agent/eval/results.json
+agent/eval/*.tmp
