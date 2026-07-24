@@ -1,10 +1,11 @@
 """Official LangChain / LangGraph Deep Agent Architecture for ITK-SNAP.
 
-Built using:
+Features & Fixes:
   - langgraph.prebuilt.create_react_agent (Stateful ReAct Deep Agent Graph)
-  - langgraph.checkpoint.memory.MemorySaver (Persistent Session Checkpointer)
-  - langchain_core.tools.StructuredTool (Dynamic Tool Binding for ITK-SNAP C++ RPC)
-  - Streaming Event Callbacks (astream_events token & tool emission)
+  - langgraph.checkpoint.memory.MemorySaver (Session Memory Checkpointer)
+  - Dynamic C++ Tool Bindings (2-arg execute(name, args))
+  - Reliable token accumulation & assistant event emission for ITK-SNAP GUI
+  - Full multi-round ReAct fallback engine
 """
 from __future__ import annotations
 
@@ -48,6 +49,21 @@ def _system_prompt_base() -> str:
         "- MULTI-STEP EXECUTION: Complete ALL requested tasks in a turn before finishing.\n"
         + skills_index_block()
     )
+
+
+def _extract_chunk_text(content: Any) -> str:
+    """Safely extract string content from LangChain stream chunks (handles Anthropic list blocks)."""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        text_parts = []
+        for block in content:
+            if isinstance(block, str):
+                text_parts.append(block)
+            elif isinstance(block, dict) and block.get("type") == "text":
+                text_parts.append(block.get("text", ""))
+        return "".join(text_parts)
+    return str(content or "")
 
 
 # ----------------------------------------------------------------------
@@ -98,22 +114,25 @@ class LangChainDeepAgent:
             name = t["name"]
             desc = t.get("description", "")
             
-            # Closure to execute tool asynchronously
             def make_tool_fn(tool_name=name):
                 async def async_tool_fn(**kwargs) -> str:
+                    await emit_fn({"type": "tool_start", "name": tool_name, "args": kwargs})
                     if tool_name == "use_skill":
                         sname = kwargs.get("name", "")
                         sbody, err = get_skill(sname)
-                        return sbody if sbody else (err or "Skill not found.")
+                        res_text = sbody if sbody else (err or "Skill not found.")
+                        await emit_fn({"type": "tool_result", "name": tool_name, "ok": sbody is not None, "text": res_text})
+                        return res_text
                     elif tool_name == "read_skill_file":
                         sname = kwargs.get("name", "")
                         fname = kwargs.get("file", "")
                         fcontent, err = read_skill_file(sname, fname)
-                        return fcontent if fcontent else (err or "File not found.")
+                        res_text = fcontent if fcontent else (err or "File not found.")
+                        await emit_fn({"type": "tool_result", "name": tool_name, "ok": fcontent is not None, "text": res_text})
+                        return res_text
                     else:
-                        await emit_fn({"type": "tool_start", "name": tool_name, "args": kwargs})
-                        call_id = f"lc_{tool_name}"
-                        obs = await tool_host.execute(call_id, tool_name, kwargs)
+                        # Fix: tool_host.execute takes exactly 2 arguments (name, args)
+                        obs = await tool_host.execute(tool_name, kwargs)
                         is_error = obs.get("ok") is False or bool(obs.get("error"))
                         text = obs.get("text") or obs.get("message") or ("Success" if not is_error else "Error")
                         await emit_fn({"type": "tool_result", "name": tool_name, "ok": not is_error, "text": text})
@@ -133,7 +152,6 @@ class LangChainDeepAgent:
         """Run turn using LangGraph Deep Agent Graph with persistent MemorySaver checkpointing."""
         from skills import get_skill, match_skill
         
-        # Build System Prompt with matched skill procedure
         turn_prompt = self.system_prompt
         matched = match_skill(user_text)
         if matched:
@@ -143,11 +161,9 @@ class LangChainDeepAgent:
                 await emit({"type": "tool_start", "name": "use_skill", "args": {"name": matched}})
                 await emit({"type": "tool_result", "name": "use_skill", "ok": True, "text": f"Loaded skill '{matched}'."})
 
-        # 1. Create LangChain model & tools
         llm = create_langchain_model()
         tools = self._convert_tools(tool_host, emit)
 
-        # 2. Build LangGraph Deep Agent Graph with MemorySaver
         graph = create_react_agent(
             model=llm,
             tools=tools,
@@ -155,29 +171,29 @@ class LangChainDeepAgent:
             checkpointer=self.checkpointer
         )
 
-        thread_config = {"configurable": {"thread_id": sid}}
-        
+        thread_config = {"configurable": {"thread_id": str(sid)}}
         await emit({"type": "status", "text": "thinking…"})
 
-        # 3. Stream graph execution events live to WebSocket UI
+        accumulated_text = ""
+
+        # Stream graph execution events live to WebSocket UI
         async for event in graph.astream_events({"messages": [("user", user_text)]}, thread_config, version="v2"):
             kind = event.get("event")
             if kind == "on_chat_model_stream":
                 chunk = event.get("data", {}).get("chunk", {})
-                content = getattr(chunk, "content", "")
-                if content:
-                    await emit({"type": "token", "text": content})
-            elif kind == "on_chain_end" and event.get("name") == "LangGraph":
-                output = event.get("data", {}).get("output", {})
-                messages = output.get("messages", [])
-                if messages:
-                    last_msg = messages[-1]
-                    if isinstance(last_msg, AIMessage) and last_msg.content:
-                        await emit({"type": "assistant", "text": str(last_msg.content)})
+                raw_content = getattr(chunk, "content", "")
+                delta = _extract_chunk_text(raw_content)
+                if delta:
+                    accumulated_text += delta
+                    await emit({"type": "token", "text": delta})
+
+        # Reliable assistant emit for C++ AssistantPanel rendering
+        if accumulated_text.strip():
+            await emit({"type": "assistant", "text": accumulated_text.strip()})
 
 
 # ----------------------------------------------------------------------
-# Main Agent Facade (Uses LangChain Deep Agent when available, else Native ReAct)
+# Main Agent Facade
 # ----------------------------------------------------------------------
 class Agent:
     def __init__(self):
@@ -198,7 +214,7 @@ class Agent:
             except Exception as exc:
                 logger.warning(f"LangGraph execution exception: {exc}, falling back to native ReAct.")
 
-        # Fallback Native ReAct loop
+        # Full Multi-Round Native ReAct Fallback Engine
         from llm import make_backend
         backend = make_backend(config)
         from skills import SKILL_TOOLS, get_skill, read_skill_file, match_skill
@@ -216,23 +232,50 @@ class Agent:
                 await emit({"type": "tool_result", "name": "use_skill", "ok": True, "text": f"Loaded skill '{matched}'."})
 
         history.append({"role": "user", "content": user_text})
-        await emit({"type": "status", "text": "thinking…"})
-        
         loop = asyncio.get_running_loop()
-        def cb(delta):
-            asyncio.run_coroutine_threadsafe(emit({"type": "token", "text": delta}), loop)
 
-        res = await asyncio.to_thread(backend.run_turn, system_prompt, history, tools, cb)
-        if res.tool_calls:
+        for _round in range(config.MAX_ROUNDS):
+            await emit({"type": "status", "text": "thinking…"})
+            
+            def cb(delta):
+                asyncio.run_coroutine_threadsafe(emit({"type": "token", "text": delta}), loop)
+
+            res = await asyncio.to_thread(backend.run_turn, system_prompt, history, tools, cb)
+            history.append({"role": "assistant", "content": res.assistant_content})
+
+            # Surface text to C++ panel
+            final_text = "".join(b.get("text", "") for b in res.assistant_content if b.get("type") == "text")
+            if final_text.strip():
+                await emit({"type": "assistant", "text": final_text.strip()})
+
+            if res.stop_reason != "tool_use" or not res.tool_calls:
+                return
+
+            tool_results = []
             for call in res.tool_calls:
                 call_id = call["id"]
                 tname = call["name"]
-                args = call.get("input", {})
+                args = dict(call.get("input") or {})
                 await emit({"type": "tool_start", "name": tname, "args": args})
-                obs = await tool_host.execute(call_id, tname, args)
+
+                if tname == "use_skill":
+                    body, err = get_skill(args.get("name", ""))
+                    obs = {"ok": err is None, "message": body if body else err}
+                elif tname == "read_skill_file":
+                    content, err = read_skill_file(args.get("name", ""), args.get("file", ""))
+                    obs = {"ok": err is None, "message": content if content else err}
+                else:
+                    # Fix: tool_host.execute takes exactly 2 arguments (name, args)
+                    obs = await tool_host.execute(tname, args)
+
                 is_err = obs.get("ok") is False or bool(obs.get("error"))
                 otext = obs.get("text") or obs.get("message") or ("Success" if not is_err else "Error")
                 await emit({"type": "tool_result", "name": tname, "ok": not is_err, "text": otext})
-        else:
-            final_text = "".join(b.get("text", "") for b in res.assistant_content if b.get("type") == "text")
-            await emit({"type": "assistant", "text": final_text})
+
+                tool_results.append({
+                    "type": "tool_result",
+                    "tool_use_id": call_id,
+                    "content": [{"type": "text", "text": otext}],
+                    "is_error": is_err
+                })
+            history.append({"role": "user", "content": tool_results})

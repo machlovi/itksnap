@@ -146,7 +146,7 @@ async def ws(websocket: WebSocket, sid: str):
             if not text:
                 continue
             await emit({"type": "user", "text": text})
-            await agent.run(host, text, history, emit)
+            await agent.run(host, text, sid, emit)
             await emit({"type": "turn_end"})
     except WebSocketDisconnect:
         pass
