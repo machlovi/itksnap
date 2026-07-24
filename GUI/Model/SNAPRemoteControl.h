@@ -95,6 +95,18 @@ private:
   QString toolWorldToVoxel(const QJsonObject &args, bool &ok);
   QString toolSetOverlayOpacity(const QJsonObject &args, bool &ok);
 
+  // --- added: reorientation, automatic registration, colormap/LUT ---
+  QString toolReorientImage(const QJsonObject &args, bool &ok);
+  QString toolRegisterImages(const QJsonObject &args, bool &ok);
+  QString toolSetColormap(const QJsonObject &args, bool &ok);
+  QString toolImportMesh(const QJsonObject &args, bool &ok);
+
+  QString toolDrawSphereAtCursor(const QJsonObject &args, bool &ok);
+  QString toolMeasureDistance(const QJsonObject &args, bool &ok);
+  QString toolGetIntensityHistogram(const QJsonObject &args, bool &ok);
+  QString toolFillHolesLabel(const QJsonObject &args, bool &ok);
+  QString toolGetLayerList(const QJsonObject &args, bool &ok);
+
   GlobalUIModel *m_Model = nullptr;
 };
 

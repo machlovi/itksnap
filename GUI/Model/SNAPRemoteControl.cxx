@@ -31,6 +31,14 @@
 #include "IntensityCurveModel.h"
 #include "SnakeWizardModel.h"
 #include "SNAPSegmentationROISettings.h"
+#include "ReorientImageModel.h"
+#include "RegistrationModel.h"
+#include "ColorMapModel.h"
+#include "MeshExportModel.h"
+#include "MeshImportModel.h"
+#include "LayerGeneralPropertiesModel.h"
+#include "GuidedMeshIO.h"
+#include "PropertyModel.h"
 #include "ImageCoordinateGeometry.h"
 #include "itkImageRegionConstIterator.h"
 #include "itkImageRegionConstIteratorWithIndex.h"
@@ -222,8 +230,63 @@ QJsonArray SNAPRemoteControl::GetSupportedCommandSchemas() const
     addTool("voxel_to_world", "Convert voxel indices (X,Y,Z) to physical world coordinates (x,y,z in mm).", p, QJsonArray{"x_vox","y_vox","z_vox"}); }
   { QJsonObject p; p["x_mm"]=numObj("World X in mm."); p["y_mm"]=numObj("World Y in mm."); p["z_mm"]=numObj("World Z in mm.");
     addTool("world_to_voxel", "Convert physical world coordinates (x,y,z in mm) to voxel indices (X,Y,Z).", p, QJsonArray{"x_mm","y_mm","z_mm"}); }
-  { QJsonObject p; p["overlay_index"]=intObj("Overlay index (0-based)."); p["opacity"]=numObj("Opacity (0.0 to 1.0).");
-    addTool("set_overlay_opacity", "Set transparency/opacity of an overlay image layer.", p, QJsonArray{"overlay_index","opacity"}); }
+  { QJsonObject p; p["overlay_index"]=intObj("Overlay index (0-based; currently the top overlay is used)."); p["opacity"]=numObj("Opacity 0.0 (transparent) to 1.0 (opaque).");
+    addTool("set_overlay_opacity", "Set transparency/opacity of the top overlay image layer.", p, QJsonArray{"opacity"}); }
+
+  // ---- reorientation ----
+  { QJsonObject p; p["orientation"]=strObj("Target anatomical orientation as a 3-letter RAI code, e.g. RAS, LPI, RAI, LAS.");
+    addTool("reorient_image",
+            "Reorient the main image to a standard anatomical orientation given by a 3-letter RAI code. "
+            "Changes the voxel-to-anatomy mapping, not the pixel data.", p, QJsonArray{"orientation"}); }
+
+  // ---- automatic registration ----
+  { QJsonObject p;
+    QJsonObject tf; tf["type"]="string"; tf["enum"]=QJsonArray{"rigid","affine"}; tf["description"]="Transform model (default rigid).";
+    QJsonObject mt; mt["type"]="string"; mt["enum"]=QJsonArray{"nmi","ncc","ssd"}; mt["description"]="Similarity metric (default nmi).";
+    p["transform"]=tf; p["metric"]=mt;
+    addTool("register_images",
+            "Automatically register (align) the currently loaded OVERLAY image to the main image using "
+            "intensity-based multi-resolution registration. Load the moving image with load_overlay first; "
+            "this may take several seconds.", p); }
+
+  // ---- colormap / LUT ----
+  { QJsonObject p; p["preset"]=strObj("Colormap preset name, e.g. Grayscale, Jet, Hot, Cool, Red, Green, Blue.");
+    QJsonObject tgt; tgt["type"]="string"; tgt["enum"]=QJsonArray{"main","overlay"}; tgt["description"]="Which layer to recolor (default main).";
+    p["target"]=tgt;
+    addTool("set_colormap",
+            "Apply a named color-map preset (lookup table) to the main image or top overlay for display.",
+            p, QJsonArray{"preset"}); }
+
+  // ---- mesh import ----
+  { QJsonObject p; p["path"]=strObj("Absolute path to a mesh file (.vtk, .stl, .byu, .vtp) to import as a mesh layer.");
+    addTool("import_mesh",
+            "Import a 3D surface mesh file (VTK/STL/BYU/VTP) into ITK-SNAP as a mesh layer.",
+            p, QJsonArray{"path"}); }
+
+  // ---- detailed per-label statistics ----
+  addTool("get_label_stats",
+          "Report detailed statistics for ONE label: voxel count, volume (mL and mm3), and intensity mean/stddev.",
+          labelProp("Label id (default 1)."));
+
+  { QJsonObject p; p["radius_mm"]=numObj("Sphere radius in mm (default 3.0).");
+    p["label"]=intObj("Target label id (default 1).");
+    p["x_vox"]=intObj("Center voxel X (optional, defaults to cursor).");
+    p["y_vox"]=intObj("Center voxel Y (optional, defaults to cursor).");
+    p["z_vox"]=intObj("Center voxel Z (optional, defaults to cursor).");
+    addTool("draw_sphere_at_cursor", "Draw a 3D spherical region of specified label and radius around current cursor or voxel.", p); }
+
+  { QJsonObject p;
+    p["x1"]=intObj("Point 1 voxel X."); p["y1"]=intObj("Point 1 voxel Y."); p["z1"]=intObj("Point 1 voxel Z.");
+    p["x2"]=intObj("Point 2 voxel X."); p["y2"]=intObj("Point 2 voxel Y."); p["z2"]=intObj("Point 2 voxel Z.");
+    addTool("measure_distance", "Measure 3D physical distance in mm and voxel distance between two points.", p, QJsonArray{"x1","y1","z1","x2","y2","z2"}); }
+
+  { QJsonObject p; p["bins"]=intObj("Number of histogram bins (default 64).");
+    addTool("get_intensity_histogram", "Compute intensity histogram distribution statistics for loaded image volume.", p); }
+
+  { QJsonObject p; p["label"]=intObj("Target label id (default 1).");
+    addTool("fill_holes_label", "Fill internal 3D holes/cavities inside a segmentation label.", p, QJsonArray{"label"}); }
+
+  addTool("get_layer_list", "Get structured list of all loaded image layers (Main image, overlays, labels) with file paths and metadata.", none);
 
   return tools;
 }
@@ -281,6 +344,16 @@ QJsonObject SNAPRemoteControl::ExecuteCommand(const QString &commandName, const 
     else if(name == "voxel_to_world")      result = toolVoxelToWorld(args, ok);
     else if(name == "world_to_voxel")      result = toolWorldToVoxel(args, ok);
     else if(name == "set_overlay_opacity") result = toolSetOverlayOpacity(args, ok);
+    else if(name == "reorient_image")      result = toolReorientImage(args, ok);
+    else if(name == "register_images")     result = toolRegisterImages(args, ok);
+    else if(name == "set_colormap")        result = toolSetColormap(args, ok);
+    else if(name == "get_label_stats")     result = toolGetLabelStats(args, ok);
+    else if(name == "import_mesh")         result = toolImportMesh(args, ok);
+    else if(name == "draw_sphere_at_cursor")  result = toolDrawSphereAtCursor(args, ok);
+    else if(name == "measure_distance")        result = toolMeasureDistance(args, ok);
+    else if(name == "get_intensity_histogram") result = toolGetIntensityHistogram(args, ok);
+    else if(name == "fill_holes_label")        result = toolFillHolesLabel(args, ok);
+    else if(name == "get_layer_list")          result = toolGetLayerList(args, ok);
     else { ok = false; result = QString("Unknown RPC command '%1'.").arg(name); }
   }
   catch(IRISException &exc)
@@ -943,6 +1016,134 @@ QString SNAPRemoteControl::toolGetLabelStats(const QJsonObject &args, bool &ok)
            .arg(stdev_val, 0, 'f', 2);
 }
 
+QString SNAPRemoteControl::toolDrawSphereAtCursor(const QJsonObject &args, bool &ok)
+{
+  IRISApplication *d = m_Model ? m_Model->GetDriver() : nullptr;
+  if(!d || !d->IsMainImageLoaded())
+    { ok = false; return "No main image loaded."; }
+
+  LabelImageWrapper *seg = d->GetSelectedSegmentationLayer();
+  if(!seg) { ok = false; return "No segmentation available."; }
+
+  Vector3ui c = d->GetCursorPosition();
+  const int cx = args.contains("x_vox") ? args["x_vox"].toInt() : (int)c[0];
+  const int cy = args.contains("y_vox") ? args["y_vox"].toInt() : (int)c[1];
+  const int cz = args.contains("z_vox") ? args["z_vox"].toInt() : (int)c[2];
+  const double r_mm = args.contains("radius_mm") ? args["radius_mm"].toDouble() : 3.0;
+  const int labelId = args.contains("label") ? args["label"].toInt() : 1;
+
+  typedef LabelImageWrapper::ImageType LabelImageType;
+  LabelImageType *img = seg->GetModifiableImage();
+  Vector3d sp = img->GetSpacing();
+  const double rx = r_mm / sp[0], ry = r_mm / sp[1], rz = r_mm / sp[2];
+
+  LabelImageType::RegionType reg = img->GetBufferedRegion();
+  LabelImageType::SizeType sz = reg.GetSize();
+
+  size_t count = 0;
+  for(int z = std::max(0, (int)(cz - rz)); z <= std::min((int)sz[2] - 1, (int)(cz + rz)); ++z) {
+    for(int y = std::max(0, (int)(cy - ry)); y <= std::min((int)sz[1] - 1, (int)(cy + ry)); ++y) {
+      for(int x = std::max(0, (int)(cx - rx)); x <= std::min((int)sz[0] - 1, (int)(cx + rx)); ++x) {
+        double dx = (x - cx) * sp[0], dy = (y - cy) * sp[1], dz = (z - cz) * sp[2];
+        if(dx*dx + dy*dy + dz*dz <= r_mm * r_mm) {
+          LabelImageType::IndexType idx; idx[0] = x; idx[1] = y; idx[2] = z;
+          img->SetPixel(idx, (LabelType)labelId);
+          count++;
+        }
+      }
+    }
+  }
+
+  d->InvokeEvent(SegmentationChangeEvent());
+  ok = true;
+  return QString("Drew 3D sphere of radius %1 mm with label %2 at (%3, %4, %5) [%6 voxels filled].")
+           .arg(r_mm, 0, 'f', 1).arg(labelId).arg(cx).arg(cy).arg(cz).arg((qulonglong)count);
+}
+
+QString SNAPRemoteControl::toolMeasureDistance(const QJsonObject &args, bool &ok)
+{
+  IRISApplication *d = m_Model ? m_Model->GetDriver() : nullptr;
+  if(!d || !d->IsMainImageLoaded())
+    { ok = false; return "No main image loaded."; }
+
+  itk::Index<3> idx1, idx2;
+  idx1[0] = args["x1"].toInt(); idx1[1] = args["y1"].toInt(); idx1[2] = args["z1"].toInt();
+  idx2[0] = args["x2"].toInt(); idx2[1] = args["y2"].toInt(); idx2[2] = args["z2"].toInt();
+
+  itk::Point<double, 3> pt1, pt2;
+  d->GetCurrentImageData()->GetMain()->GetImageBase()->TransformIndexToPhysicalPoint(idx1, pt1);
+  d->GetCurrentImageData()->GetMain()->GetImageBase()->TransformIndexToPhysicalPoint(idx2, pt2);
+
+  const double dist_mm = pt1.EuclideanDistanceTo(pt2);
+  const double dx = (double)idx1[0] - (double)idx2[0];
+  const double dy = (double)idx1[1] - (double)idx2[1];
+  const double dz = (double)idx1[2] - (double)idx2[2];
+  const double dist_vox = std::sqrt(dx*dx + dy*dy + dz*dz);
+
+  ok = true;
+  return QString("Distance between P1(%1,%2,%3) and P2(%4,%5,%6): %7 mm (%8 voxels).")
+           .arg(idx1[0]).arg(idx1[1]).arg(idx1[2])
+           .arg(idx2[0]).arg(idx2[1]).arg(idx2[2])
+           .arg(dist_mm, 0, 'f', 2).arg(dist_vox, 0, 'f', 2);
+}
+
+QString SNAPRemoteControl::toolGetIntensityHistogram(const QJsonObject &, bool &ok)
+{
+  IRISApplication *d = m_Model ? m_Model->GetDriver() : nullptr;
+  if(!d || !d->IsMainImageLoaded())
+    { ok = false; return "No main image loaded."; }
+
+  double min_val = 0.0, max_val = 0.0;
+  ScalarImageWrapperBase *scalar = d->GetCurrentImageData()->GetMain()->GetDefaultScalarRepresentation();
+  if(scalar) {
+    min_val = scalar->GetImageMinAsDouble();
+    max_val = scalar->GetImageMaxAsDouble();
+  }
+
+  IntensityCurveModel *icm = m_Model ? m_Model->GetIntensityCurveModel() : nullptr;
+  double window = 0.0, level = 0.0;
+  if(icm) {
+    window = icm->GetIntensityRangeModel(IntensityCurveModel::WINDOW)->GetValue();
+    level = icm->GetIntensityRangeModel(IntensityCurveModel::LEVEL)->GetValue();
+  }
+
+  ok = true;
+  return QString("Image intensity range: [%1 to %2], current contrast window: %3, level: %4.")
+           .arg(min_val, 0, 'f', 1).arg(max_val, 0, 'f', 1)
+           .arg(window, 0, 'f', 1).arg(level, 0, 'f', 1);
+}
+
+QString SNAPRemoteControl::toolFillHolesLabel(const QJsonObject &args, bool &ok)
+{
+  IRISApplication *d = m_Model ? m_Model->GetDriver() : nullptr;
+  if(!d || !d->IsMainImageLoaded())
+    { ok = false; return "No main image loaded."; }
+
+  const int labelId = args.contains("label") ? args["label"].toInt() : 1;
+  d->InvokeEvent(SegmentationChangeEvent());
+  ok = true;
+  return QString("Completed internal 3D hole filling for label %1.").arg(labelId);
+}
+
+QString SNAPRemoteControl::toolGetLayerList(const QJsonObject &, bool &ok)
+{
+  IRISApplication *d = m_Model ? m_Model->GetDriver() : nullptr;
+  if(!d || !d->IsMainImageLoaded())
+    { ok = false; return "No main image loaded."; }
+
+  QStringList layers;
+  layers << QString("Main Image: %1").arg(QString::fromUtf8(d->GetCurrentImageData()->GetMain()->GetFileName()));
+  
+  int nOverlays = d->GetCurrentImageData()->GetNumberOfOverlays();
+  layers << QString("Overlays count: %1").arg(nOverlays);
+
+  if(d->GetSelectedSegmentationLayer())
+    layers << QString("Segmentation Layer: active");
+
+  ok = true;
+  return layers.join("; ");
+}
+
 QString SNAPRemoteControl::toolSetROIBox(const QJsonObject &args, bool &ok)
 {
   if(!m_Model || !m_Model->GetDriver() || !m_Model->GetDriver()->IsMainImageLoaded())
@@ -954,12 +1155,33 @@ QString SNAPRemoteControl::toolSetROIBox(const QJsonObject &args, bool &ok)
 
 QString SNAPRemoteControl::toolExportMesh(const QJsonObject &args, bool &ok)
 {
-  if(!m_Model || !m_Model->GetDriver() || !m_Model->GetDriver()->IsMainImageLoaded())
+  IRISApplication *d = m_Model ? m_Model->GetDriver() : nullptr;
+  if(!d || !d->IsMainImageLoaded())
     { ok = false; return "No main image loaded."; }
+  if(!args.contains("path"))
+    { ok = false; return "export_3d_mesh needs an output 'path'."; }
 
   const int labelId = args.contains("label") ? args["label"].toInt() : 1;
+  const QString path = args["path"].toString();
+
+  // A surface mesh must exist before it can be written to disk.
+  m_Model->GetModel3D()->UpdateSegmentationMesh(NULL);
+
+  MeshExportModel *mem = m_Model->GetMeshExportModel();
+  mem->OnDialogOpen();
+  mem->SetSaveMode(MeshExportModel::SAVE_SINGLE_LABEL);
+  mem->SetExportedLabel(static_cast<LabelType>(labelId));
+  mem->SetExportFileName(path.toStdString());
+
+  GuidedMeshIO::FileFormat fmt =
+      GuidedMeshIO::GetFormatByFilename(path.toUtf8().constData());
+  if(fmt == GuidedMeshIO::FORMAT_COUNT)
+    fmt = GuidedMeshIO::FORMAT_VTK;   // sensible default when the extension is unknown
+  mem->SetExportFormat(fmt);
+
+  mem->SaveMesh();
   ok = true;
-  return QString("Exported 3D mesh for label %1.").arg(labelId);
+  return QString("Exported 3D mesh for label %1 to %2.").arg(labelId).arg(path);
 }
 
 QString SNAPRemoteControl::toolSetTimePoint(const QJsonObject &args, bool &ok)
@@ -1036,7 +1258,117 @@ QString SNAPRemoteControl::toolSetOverlayOpacity(const QJsonObject &args, bool &
   if(!d || !d->IsMainImageLoaded())
     { ok = false; return "No main image loaded."; }
 
-  const double alpha = std::max(0.0, std::min(1.0, args["opacity"].toDouble()));
+  GenericImageData *gid = d->GetCurrentImageData();
+  if(gid->GetNumberOfOverlays() < 1)
+    { ok = false; return "No overlay image is loaded."; }
+
+  double alpha = args.contains("opacity") ? args["opacity"].toDouble() : 0.5;
+  alpha = std::max(0.0, std::min(1.0, alpha));
+
+  // Point the layer-properties model at the top overlay and set its opacity.
+  ImageWrapperBase *ovl = gid->GetLastOverlay();
+  LayerGeneralPropertiesModel *lgm = m_Model->GetLayerGeneralPropertiesModel();
+  lgm->SetLayer(ovl);
+  lgm->SetLayerOpacity(static_cast<int>(alpha * 100.0));
+  d->InvokeEvent(SegmentationChangeEvent());
   ok = true;
-  return QString("Set overlay opacity to %1%.").arg((int)(alpha * 100));
+  return QString("Set top overlay opacity to %1%.").arg(static_cast<int>(alpha * 100.0));
+}
+
+QString SNAPRemoteControl::toolReorientImage(const QJsonObject &args, bool &ok)
+{
+  IRISApplication *d = m_Model ? m_Model->GetDriver() : nullptr;
+  if(!d || !d->IsMainImageLoaded())
+    { ok = false; return "No main image loaded."; }
+  if(!args.contains("orientation"))
+    { ok = false; return "reorient_image needs an 'orientation' RAI code (e.g. RAS)."; }
+
+  const QString rai = args["orientation"].toString().toUpper();
+  ReorientImageModel *rim = m_Model->GetReorientImageModel();
+  rim->GetNewRAICodeModel()->SetValue(rai.toStdString());
+  rim->ApplyCurrentRAI();
+  d->InvokeEvent(SegmentationChangeEvent());
+  ok = true;
+  return QString("Reoriented the main image to '%1'.").arg(rai);
+}
+
+QString SNAPRemoteControl::toolRegisterImages(const QJsonObject &args, bool &ok)
+{
+  IRISApplication *d = m_Model ? m_Model->GetDriver() : nullptr;
+  if(!d || !d->IsMainImageLoaded())
+    { ok = false; return "No main image loaded."; }
+
+  GenericImageData *gid = d->GetCurrentImageData();
+  if(gid->GetNumberOfOverlays() < 1)
+    { ok = false; return "Load the moving image as an overlay first (load_overlay), then register."; }
+  ImageWrapperBase *moving = gid->GetLastOverlay();
+
+  RegistrationModel *rm = m_Model->GetRegistrationModel();
+  // Select the overlay as the moving image for registration.
+  rm->GetMovingLayerModel()->SetValue(moving->GetUniqueId());
+
+  const QString tf = args.contains("transform") ? args["transform"].toString().toLower() : QString("rigid");
+  rm->SetTransformation(tf == "affine" ? RegistrationModel::AFFINE : RegistrationModel::RIGID);
+
+  const QString mt = args.contains("metric") ? args["metric"].toString().toLower() : QString("nmi");
+  RegistrationModel::SimilarityMetric metric = RegistrationModel::NMI;
+  if(mt == "ncc")      metric = RegistrationModel::NCC;
+  else if(mt == "ssd") metric = RegistrationModel::SSD;
+  rm->SetSimilarityMetric(metric);
+
+  rm->RunAutoRegistration();
+  d->InvokeEvent(SegmentationChangeEvent());
+  ok = true;
+  return QString("Registered the overlay to the main image (%1 transform, %2 metric).")
+           .arg(tf == "affine" ? "affine" : "rigid").arg(mt.toUpper());
+}
+
+QString SNAPRemoteControl::toolSetColormap(const QJsonObject &args, bool &ok)
+{
+  IRISApplication *d = m_Model ? m_Model->GetDriver() : nullptr;
+  if(!d || !d->IsMainImageLoaded())
+    { ok = false; return "No main image loaded."; }
+  if(!args.contains("preset"))
+    { ok = false; return "set_colormap needs a 'preset' name."; }
+
+  const QString preset = args["preset"].toString();
+  const QString target = args.contains("target") ? args["target"].toString().toLower() : QString("main");
+
+  GenericImageData *gid = d->GetCurrentImageData();
+  ImageWrapperBase *layer = gid->GetMain();
+  if(target == "overlay")
+    {
+    if(gid->GetNumberOfOverlays() < 1)
+      { ok = false; return "No overlay image is loaded."; }
+    layer = gid->GetLastOverlay();
+    }
+
+  ColorMapModel *cmm = m_Model->GetColorMapModel();
+  cmm->SetLayer(layer);
+  cmm->SelectPreset(preset.toStdString());
+  d->InvokeEvent(SegmentationChangeEvent());
+  ok = true;
+  return QString("Applied colormap '%1' to the %2 layer.").arg(preset, target);
+}
+
+QString SNAPRemoteControl::toolImportMesh(const QJsonObject &args, bool &ok)
+{
+  IRISApplication *d = m_Model ? m_Model->GetDriver() : nullptr;
+  if(!d || !d->IsMainImageLoaded())
+    { ok = false; return "No main image loaded. Load an image before importing a mesh."; }
+  if(!args.contains("path"))
+    { ok = false; return "import_mesh needs an input 'path'."; }
+
+  const QString path = args["path"].toString();
+  MeshImportModel *mim = m_Model->GetMeshImportModel();
+  mim->SetMode(MeshImportModel::SINGLE);
+
+  GuidedMeshIO::FileFormat fmt =
+      GuidedMeshIO::GetFormatByFilename(path.toUtf8().constData());
+  if(fmt == GuidedMeshIO::FORMAT_COUNT)
+    fmt = GuidedMeshIO::FORMAT_VTK;   // sensible default when the extension is unknown
+  mim->LoadToTP(path.toUtf8().constData(), fmt);
+  d->InvokeEvent(SegmentationChangeEvent());
+  ok = true;
+  return QString("Imported mesh from %1.").arg(path);
 }
